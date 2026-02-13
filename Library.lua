@@ -23,6 +23,9 @@ local Options = {};
 getgenv().Toggles = Toggles;
 getgenv().Options = Options;
 
+-- Mobile Detection
+local IsMobile = InputService.TouchEnabled and not InputService.KeyboardEnabled;
+
 local Library = {
     Registry = {};
     RegistryMap = {};
@@ -44,6 +47,10 @@ local Library = {
 
     Signals = {};
     ScreenGui = ScreenGui;
+    
+    IsMobile = IsMobile;
+    MobileScale = IsMobile and 1.3 or 1; -- Scale factor for mobile elements
+    MinTouchSize = IsMobile and 44 or 20; -- Minimum touch target size
 };
 
 local RainbowStep = 0
@@ -89,6 +96,31 @@ local function GetTeamsString()
     
     return TeamList;
 end;
+
+-- Helper function to get input position (works for both mouse and touch)
+function Library:GetInputPosition(Input)
+    if Input and Input.Position then
+        return Input.Position.X, Input.Position.Y;
+    end
+    return Mouse.X, Mouse.Y;
+end
+
+-- Helper function to check if input is a click/tap
+function Library:IsClickInput(Input)
+    return Input.UserInputType == Enum.UserInputType.MouseButton1 
+        or Input.UserInputType == Enum.UserInputType.Touch;
+end
+
+-- Helper function to check if input is a secondary click (right click)
+function Library:IsSecondaryInput(Input)
+    return Input.UserInputType == Enum.UserInputType.MouseButton2;
+end
+
+-- Helper function to check if clicking/touching is active
+function Library:IsInputActive()
+    return InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) 
+        or #InputService:GetTouchLocations() > 0;
+end
 
 function Library:SafeCallback(f, ...)
     if (not f) then
@@ -148,7 +180,7 @@ function Library:CreateLabel(Properties, IsHud)
         BackgroundTransparency = 1;
         Font = Library.Font;
         TextColor3 = Library.FontColor;
-        TextSize = 16;
+        TextSize = 16 * Library.MobileScale;
         TextStrokeTransparency = 0;
     });
 
@@ -164,32 +196,55 @@ end;
 function Library:MakeDraggable(Instance, Cutoff)
     Instance.Active = true;
 
+    local DragStart = nil;
+    local StartPos = nil;
+    local Dragging = false;
+
     Instance.InputBegan:Connect(function(Input)
-        if Input.UserInputType == Enum.UserInputType.MouseButton1 then
+        if Library:IsClickInput(Input) then
+            local InputX, InputY = Library:GetInputPosition(Input);
             local ObjPos = Vector2.new(
-                Mouse.X - Instance.AbsolutePosition.X,
-                Mouse.Y - Instance.AbsolutePosition.Y
+                InputX - Instance.AbsolutePosition.X,
+                InputY - Instance.AbsolutePosition.Y
             );
 
             if ObjPos.Y > (Cutoff or 40) then
                 return;
             end;
 
-            while InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) do
-                Instance.Position = UDim2.new(
-                    0,
-                    Mouse.X - ObjPos.X + (Instance.Size.X.Offset * Instance.AnchorPoint.X),
-                    0,
-                    Mouse.Y - ObjPos.Y + (Instance.Size.Y.Offset * Instance.AnchorPoint.Y)
-                );
-
-                RenderStepped:Wait();
-            end;
+            Dragging = true;
+            DragStart = Vector2.new(InputX, InputY);
+            StartPos = Instance.Position;
         end;
+    end)
+
+    Instance.InputEnded:Connect(function(Input)
+        if Library:IsClickInput(Input) then
+            Dragging = false;
+        end
+    end)
+
+    InputService.InputChanged:Connect(function(Input)
+        if Dragging and (Input.UserInputType == Enum.UserInputType.MouseMovement or Input.UserInputType == Enum.UserInputType.Touch) then
+            local InputX, InputY = Library:GetInputPosition(Input);
+            local Delta = Vector2.new(InputX, InputY) - DragStart;
+            
+            Instance.Position = UDim2.new(
+                StartPos.X.Scale,
+                StartPos.X.Offset + Delta.X,
+                StartPos.Y.Scale,
+                StartPos.Y.Offset + Delta.Y
+            );
+        end
     end)
 end;
 
 function Library:AddToolTip(InfoStr, HoverInstance)
+    -- Skip tooltips on mobile
+    if IsMobile then
+        return;
+    end
+
     local X, Y = Library:GetTextBounds(InfoStr, Library.Font, 14);
     local Tooltip = Library:Create('Frame', {
         BackgroundColor3 = Library.MainColor,
@@ -353,16 +408,6 @@ function Library:RemoveFromRegistry(Instance)
 end;
 
 function Library:UpdateColorsUsingRegistry()
-    -- TODO: Could have an 'active' list of objects
-    -- where the active list only contains Visible objects.
-
-    -- IMPL: Could setup .Changed events on the AddToRegistry function
-    -- that listens for the 'Visible' propert being changed.
-    -- Visible: true => Add to active list, and call UpdateColors function
-    -- Visible: false => Remove from active list.
-
-    -- The above would be especially efficient for a rainbow menu color or live color-changing.
-
     for Idx, Object in next, Library.Registry do
         for Property, ColorIdx in next, Object.Properties do
             if type(ColorIdx) == 'string' then
@@ -375,18 +420,15 @@ function Library:UpdateColorsUsingRegistry()
 end;
 
 function Library:GiveSignal(Signal)
-    -- Only used for signals not attached to library instances, as those should be cleaned up on object destruction by Roblox
     table.insert(Library.Signals, Signal)
 end
 
 function Library:Unload()
-    -- Unload all of the signals
     for Idx = #Library.Signals, 1, -1 do
         local Connection = table.remove(Library.Signals, Idx)
         Connection:Disconnect()
     end
 
-     -- Call our unload callback, maybe to undo some hooks etc
     if Library.OnUnload then
         Library.OnUnload()
     end
@@ -411,7 +453,6 @@ do
 
     function Funcs:AddColorPicker(Idx, Info)
         local ToggleLabel = self.TextLabel;
-        -- local Container = self.Container;
 
         assert(Info.Default, 'AddColorPicker: Missing default value.');
 
@@ -433,36 +474,31 @@ do
 
         ColorPicker:SetHSVFromRGB(ColorPicker.Value);
 
+        local DisplayFrameSize = math.max(28 * Library.MobileScale, Library.MinTouchSize);
         local DisplayFrame = Library:Create('Frame', {
             BackgroundColor3 = ColorPicker.Value;
             BorderColor3 = Library:GetDarkerColor(ColorPicker.Value);
             BorderMode = Enum.BorderMode.Inset;
-            Size = UDim2.new(0, 28, 0, 14);
+            Size = UDim2.new(0, DisplayFrameSize, 0, 14 * Library.MobileScale);
             ZIndex = 6;
             Parent = ToggleLabel;
         });
 
-        -- Transparency image taken from https://github.com/matas3535/SplixPrivateDrawingLibrary/blob/main/Library.lua cus i'm lazy
         local CheckerFrame = Library:Create('ImageLabel', {
             BorderSizePixel = 0;
-            Size = UDim2.new(0, 27, 0, 13);
+            Size = UDim2.new(0, DisplayFrameSize - 1, 0, 13 * Library.MobileScale);
             ZIndex = 5;
             Image = 'http://www.roblox.com/asset/?id=12977615774';
             Visible = not not Info.Transparency;
             Parent = DisplayFrame;
         });
 
-        -- 1/16/23
-        -- Rewrote this to be placed inside the Library ScreenGui
-        -- There was some issue which caused RelativeOffset to be way off
-        -- Thus the color picker would never show
-
         local PickerFrameOuter = Library:Create('Frame', {
             Name = 'Color';
             BackgroundColor3 = Color3.new(1, 1, 1);
             BorderColor3 = Color3.new(0, 0, 0);
             Position = UDim2.fromOffset(DisplayFrame.AbsolutePosition.X, DisplayFrame.AbsolutePosition.Y + 18),
-            Size = UDim2.fromOffset(230, Info.Transparency and 271 or 253);
+            Size = UDim2.fromOffset(230 * Library.MobileScale, (Info.Transparency and 271 or 253) * Library.MobileScale);
             Visible = false;
             ZIndex = 15;
             Parent = ScreenGui,
@@ -491,8 +527,8 @@ do
 
         local SatVibMapOuter = Library:Create('Frame', {
             BorderColor3 = Color3.new(0, 0, 0);
-            Position = UDim2.new(0, 4, 0, 25);
-            Size = UDim2.new(0, 200, 0, 200);
+            Position = UDim2.new(0, 4, 0, 25 * Library.MobileScale);
+            Size = UDim2.new(0, 200 * Library.MobileScale, 0, 200 * Library.MobileScale);
             ZIndex = 17;
             Parent = PickerFrameInner;
         });
@@ -516,7 +552,7 @@ do
 
         local CursorOuter = Library:Create('ImageLabel', {
             AnchorPoint = Vector2.new(0.5, 0.5);
-            Size = UDim2.new(0, 6, 0, 6);
+            Size = UDim2.new(0, 6 * Library.MobileScale, 0, 6 * Library.MobileScale);
             BackgroundTransparency = 1;
             Image = 'http://www.roblox.com/asset/?id=9619665977';
             ImageColor3 = Color3.new(0, 0, 0);
@@ -535,8 +571,8 @@ do
 
         local HueSelectorOuter = Library:Create('Frame', {
             BorderColor3 = Color3.new(0, 0, 0);
-            Position = UDim2.new(0, 208, 0, 25);
-            Size = UDim2.new(0, 15, 0, 200);
+            Position = UDim2.new(0, 208 * Library.MobileScale, 0, 25 * Library.MobileScale);
+            Size = UDim2.new(0, 15 * Library.MobileScale, 0, 200 * Library.MobileScale);
             ZIndex = 17;
             Parent = PickerFrameInner;
         });
@@ -560,8 +596,8 @@ do
 
         local HueBoxOuter = Library:Create('Frame', {
             BorderColor3 = Color3.new(0, 0, 0);
-            Position = UDim2.fromOffset(4, 228),
-            Size = UDim2.new(0.5, -6, 0, 20),
+            Position = UDim2.fromOffset(4, 228 * Library.MobileScale),
+            Size = UDim2.new(0.5, -6, 0, 20 * Library.MobileScale),
             ZIndex = 18,
             Parent = PickerFrameInner;
         });
@@ -593,7 +629,7 @@ do
             PlaceholderText = 'Hex color',
             Text = '#FFFFFF',
             TextColor3 = Library.FontColor;
-            TextSize = 14;
+            TextSize = 14 * Library.MobileScale;
             TextStrokeTransparency = 0;
             TextXAlignment = Enum.TextXAlignment.Left;
             ZIndex = 20,
@@ -603,8 +639,8 @@ do
         Library:ApplyTextStroke(HueBox);
 
         local RgbBoxBase = Library:Create(HueBoxOuter:Clone(), {
-            Position = UDim2.new(0.5, 2, 0, 228),
-            Size = UDim2.new(0.5, -6, 0, 20),
+            Position = UDim2.new(0.5, 2, 0, 228 * Library.MobileScale),
+            Size = UDim2.new(0.5, -6, 0, 20 * Library.MobileScale),
             Parent = PickerFrameInner
         });
 
@@ -619,8 +655,8 @@ do
         if Info.Transparency then 
             TransparencyBoxOuter = Library:Create('Frame', {
                 BorderColor3 = Color3.new(0, 0, 0);
-                Position = UDim2.fromOffset(4, 251);
-                Size = UDim2.new(1, -8, 0, 15);
+                Position = UDim2.fromOffset(4, 251 * Library.MobileScale);
+                Size = UDim2.new(1, -8, 0, 15 * Library.MobileScale);
                 ZIndex = 19;
                 Parent = PickerFrameInner;
             });
@@ -655,16 +691,15 @@ do
         end;
 
         local DisplayLabel = Library:CreateLabel({
-            Size = UDim2.new(1, 0, 0, 14);
+            Size = UDim2.new(1, 0, 0, 14 * Library.MobileScale);
             Position = UDim2.fromOffset(5, 5);
             TextXAlignment = Enum.TextXAlignment.Left;
-            TextSize = 14;
-            Text = ColorPicker.Title,--Info.Default;
+            TextSize = 14 * Library.MobileScale;
+            Text = ColorPicker.Title;
             TextWrapped = false;
             ZIndex = 16;
             Parent = PickerFrameInner;
         });
-
 
         local ContextMenu = {}
         do
@@ -746,8 +781,8 @@ do
 
                 local Button = Library:CreateLabel({
                     Active = false;
-                    Size = UDim2.new(1, 0, 0, 15);
-                    TextSize = 13;
+                    Size = UDim2.new(1, 0, 0, 15 * Library.MobileScale);
+                    TextSize = 13 * Library.MobileScale;
                     Text = Str;
                     ZIndex = 16;
                     Parent = self.Inner;
@@ -760,7 +795,7 @@ do
                 );
 
                 Button.InputBegan:Connect(function(Input)
-                    if Input.UserInputType ~= Enum.UserInputType.MouseButton1 then
+                    if not Library:IsClickInput(Input) then
                         return
                     end
 
@@ -779,7 +814,6 @@ do
                 end
                 ColorPicker:SetValueRGB(Library.ColorClipboard)
             end)
-
 
             ContextMenu:AddOption('Copy HEX', function()
                 pcall(setclipboard, ColorPicker.Value:ToHex())
@@ -898,8 +932,10 @@ do
         end;
 
         SatVibMap.InputBegan:Connect(function(Input)
-            if Input.UserInputType == Enum.UserInputType.MouseButton1 then
-                while InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) do
+            if Library:IsClickInput(Input) then
+                local Dragging = true;
+                
+                local function UpdateSatVib()
                     local MinX = SatVibMap.AbsolutePosition.X;
                     local MaxX = MinX + SatVibMap.AbsoluteSize.X;
                     local MouseX = math.clamp(Mouse.X, MinX, MaxX);
@@ -911,40 +947,69 @@ do
                     ColorPicker.Sat = (MouseX - MinX) / (MaxX - MinX);
                     ColorPicker.Vib = 1 - ((MouseY - MinY) / (MaxY - MinY));
                     ColorPicker:Display();
-
-                    RenderStepped:Wait();
-                end;
-
-                Library:AttemptSave();
+                end
+                
+                UpdateSatVib();
+                
+                local MoveCon, ReleaseCon;
+                
+                MoveCon = InputService.InputChanged:Connect(function(MoveInput)
+                    if MoveInput.UserInputType == Enum.UserInputType.MouseMovement or MoveInput.UserInputType == Enum.UserInputType.Touch then
+                        UpdateSatVib();
+                    end
+                end)
+                
+                ReleaseCon = InputService.InputEnded:Connect(function(EndInput)
+                    if Library:IsClickInput(EndInput) then
+                        Dragging = false;
+                        MoveCon:Disconnect();
+                        ReleaseCon:Disconnect();
+                        Library:AttemptSave();
+                    end
+                end)
             end;
         end);
 
         HueSelectorInner.InputBegan:Connect(function(Input)
-            if Input.UserInputType == Enum.UserInputType.MouseButton1 then
-                while InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) do
+            if Library:IsClickInput(Input) then
+                local function UpdateHue()
                     local MinY = HueSelectorInner.AbsolutePosition.Y;
                     local MaxY = MinY + HueSelectorInner.AbsoluteSize.Y;
                     local MouseY = math.clamp(Mouse.Y, MinY, MaxY);
 
                     ColorPicker.Hue = ((MouseY - MinY) / (MaxY - MinY));
                     ColorPicker:Display();
-
-                    RenderStepped:Wait();
-                end;
-
-                Library:AttemptSave();
+                end
+                
+                UpdateHue();
+                
+                local MoveCon, ReleaseCon;
+                
+                MoveCon = InputService.InputChanged:Connect(function(MoveInput)
+                    if MoveInput.UserInputType == Enum.UserInputType.MouseMovement or MoveInput.UserInputType == Enum.UserInputType.Touch then
+                        UpdateHue();
+                    end
+                end)
+                
+                ReleaseCon = InputService.InputEnded:Connect(function(EndInput)
+                    if Library:IsClickInput(EndInput) then
+                        MoveCon:Disconnect();
+                        ReleaseCon:Disconnect();
+                        Library:AttemptSave();
+                    end
+                end)
             end;
         end);
 
         DisplayFrame.InputBegan:Connect(function(Input)
-            if Input.UserInputType == Enum.UserInputType.MouseButton1 and not Library:MouseIsOverOpenedFrame() then
+            if Library:IsClickInput(Input) and not Library:MouseIsOverOpenedFrame() then
                 if PickerFrameOuter.Visible then
                     ColorPicker:Hide()
                 else
                     ContextMenu:Hide()
                     ColorPicker:Show()
                 end;
-            elseif Input.UserInputType == Enum.UserInputType.MouseButton2 and not Library:MouseIsOverOpenedFrame() then
+            elseif Library:IsSecondaryInput(Input) and not Library:MouseIsOverOpenedFrame() then
                 ContextMenu:Show()
                 ColorPicker:Hide()
             end
@@ -952,26 +1017,39 @@ do
 
         if TransparencyBoxInner then
             TransparencyBoxInner.InputBegan:Connect(function(Input)
-                if Input.UserInputType == Enum.UserInputType.MouseButton1 then
-                    while InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) do
+                if Library:IsClickInput(Input) then
+                    local function UpdateTransparency()
                         local MinX = TransparencyBoxInner.AbsolutePosition.X;
                         local MaxX = MinX + TransparencyBoxInner.AbsoluteSize.X;
                         local MouseX = math.clamp(Mouse.X, MinX, MaxX);
 
                         ColorPicker.Transparency = 1 - ((MouseX - MinX) / (MaxX - MinX));
-
                         ColorPicker:Display();
-
-                        RenderStepped:Wait();
-                    end;
-
-                    Library:AttemptSave();
+                    end
+                    
+                    UpdateTransparency();
+                    
+                    local MoveCon, ReleaseCon;
+                    
+                    MoveCon = InputService.InputChanged:Connect(function(MoveInput)
+                        if MoveInput.UserInputType == Enum.UserInputType.MouseMovement or MoveInput.UserInputType == Enum.UserInputType.Touch then
+                            UpdateTransparency();
+                        end
+                    end)
+                    
+                    ReleaseCon = InputService.InputEnded:Connect(function(EndInput)
+                        if Library:IsClickInput(EndInput) then
+                            MoveCon:Disconnect();
+                            ReleaseCon:Disconnect();
+                            Library:AttemptSave();
+                        end
+                    end)
                 end;
             end);
         end;
 
         Library:GiveSignal(InputService.InputBegan:Connect(function(Input)
-            if Input.UserInputType == Enum.UserInputType.MouseButton1 then
+            if Library:IsClickInput(Input) then
                 local AbsPos, AbsSize = PickerFrameOuter.AbsolutePosition, PickerFrameOuter.AbsoluteSize;
 
                 if Mouse.X < AbsPos.X or Mouse.X > AbsPos.X + AbsSize.X
@@ -985,7 +1063,7 @@ do
                 end
             end;
 
-            if Input.UserInputType == Enum.UserInputType.MouseButton2 and ContextMenu.Container.Visible then
+            if Library:IsSecondaryInput(Input) and ContextMenu.Container.Visible then
                 if not Library:IsMouseOverFrame(ContextMenu.Container) and not Library:IsMouseOverFrame(DisplayFrame) then
                     ContextMenu:Hide()
                 end
@@ -1001,6 +1079,11 @@ do
     end;
 
     function Funcs:AddKeyPicker(Idx, Info)
+        -- Skip KeyPicker on mobile
+        if IsMobile then
+            return self;
+        end
+
         local ParentObj = self;
         local ToggleLabel = self.TextLabel;
         local Container = self.Container;
@@ -1010,7 +1093,7 @@ do
         local KeyPicker = {
             Value = Info.Default;
             Toggled = false;
-            Mode = Info.Mode or 'Toggle'; -- Always, Toggle, Hold
+            Mode = Info.Mode or 'Toggle';
             Type = 'KeyPicker';
             Callback = Info.Callback or function(Value) end;
             ChangedCallback = Info.ChangedCallback or function(New) end;
@@ -1132,7 +1215,7 @@ do
             end;
 
             Label.InputBegan:Connect(function(Input)
-                if Input.UserInputType == Enum.UserInputType.MouseButton1 then
+                if Library:IsClickInput(Input) then
                     ModeButton:Select();
                     Library:AttemptSave();
                 end;
@@ -1228,7 +1311,7 @@ do
         local Picking = false;
 
         PickOuter.InputBegan:Connect(function(Input)
-            if Input.UserInputType == Enum.UserInputType.MouseButton1 and not Library:MouseIsOverOpenedFrame() then
+            if Library:IsClickInput(Input) and not Library:MouseIsOverOpenedFrame() then
                 Picking = true;
 
                 DisplayLabel.Text = '';
@@ -1276,7 +1359,7 @@ do
 
                     Event:Disconnect();
                 end);
-            elseif Input.UserInputType == Enum.UserInputType.MouseButton2 and not Library:MouseIsOverOpenedFrame() then
+            elseif Library:IsSecondaryInput(Input) and not Library:MouseIsOverOpenedFrame() then
                 ModeSelectOuter.Visible = true;
             end;
         end);
@@ -1303,7 +1386,7 @@ do
                 KeyPicker:Update();
             end;
 
-            if Input.UserInputType == Enum.UserInputType.MouseButton1 then
+            if Library:IsClickInput(Input) then
                 local AbsPos, AbsSize = ModeSelectOuter.AbsolutePosition, ModeSelectOuter.AbsoluteSize;
 
                 if Mouse.X < AbsPos.X or Mouse.X > AbsPos.X + AbsSize.X
@@ -1344,7 +1427,7 @@ do
 
         Library:Create('Frame', {
             BackgroundTransparency = 1;
-            Size = UDim2.new(1, 0, 0, Size);
+            Size = UDim2.new(1, 0, 0, Size * Library.MobileScale);
             ZIndex = 1;
             Parent = Container;
         });
@@ -1357,8 +1440,8 @@ do
         local Container = Groupbox.Container;
 
         local TextLabel = Library:CreateLabel({
-            Size = UDim2.new(1, -4, 0, 15);
-            TextSize = 14;
+            Size = UDim2.new(1, -4, 0, 15 * Library.MobileScale);
+            TextSize = 14 * Library.MobileScale;
             Text = Text;
             TextWrapped = DoesWrap or false,
             TextXAlignment = Enum.TextXAlignment.Left;
@@ -1367,7 +1450,7 @@ do
         });
 
         if DoesWrap then
-            local Y = select(2, Library:GetTextBounds(Text, Library.Font, 14, Vector2.new(TextLabel.AbsoluteSize.X, math.huge)))
+            local Y = select(2, Library:GetTextBounds(Text, Library.Font, 14 * Library.MobileScale, Vector2.new(TextLabel.AbsoluteSize.X, math.huge)))
             TextLabel.Size = UDim2.new(1, -4, 0, Y)
         else
             Library:Create('UIListLayout', {
@@ -1386,7 +1469,7 @@ do
             TextLabel.Text = Text
 
             if DoesWrap then
-                local Y = select(2, Library:GetTextBounds(Text, Library.Font, 14, Vector2.new(TextLabel.AbsoluteSize.X, math.huge)))
+                local Y = select(2, Library:GetTextBounds(Text, Library.Font, 14 * Library.MobileScale, Vector2.new(TextLabel.AbsoluteSize.X, math.huge)))
                 TextLabel.Size = UDim2.new(1, -4, 0, Y)
             end
 
@@ -1404,7 +1487,6 @@ do
     end;
 
     function Funcs:AddButton(...)
-        -- TODO: Eventually redo this
         local Button = {};
         local function ProcessButtonParams(Class, Obj, ...)
             local Props = select(1, ...)
@@ -1427,10 +1509,12 @@ do
         local Container = Groupbox.Container;
 
         local function CreateBaseButton(Button)
+            local ButtonHeight = math.max(20 * Library.MobileScale, Library.MinTouchSize);
+            
             local Outer = Library:Create('Frame', {
                 BackgroundColor3 = Color3.new(0, 0, 0);
                 BorderColor3 = Color3.new(0, 0, 0);
-                Size = UDim2.new(1, -4, 0, 20);
+                Size = UDim2.new(1, -4, 0, ButtonHeight);
                 ZIndex = 5;
             });
 
@@ -1445,7 +1529,7 @@ do
 
             local Label = Library:CreateLabel({
                 Size = UDim2.new(1, 0, 1, 0);
-                TextSize = 14;
+                TextSize = 14 * Library.MobileScale;
                 Text = Button.Text;
                 ZIndex = 6;
                 Parent = Inner;
@@ -1500,7 +1584,7 @@ do
                     return false
                 end
 
-                if Input.UserInputType ~= Enum.UserInputType.MouseButton1 then
+                if not Library:IsClickInput(Input) then
                     return false
                 end
 
@@ -1545,7 +1629,7 @@ do
         InitEvents(Button)
 
         function Button:AddTooltip(tooltip)
-            if type(tooltip) == 'string' then
+            if type(tooltip) == 'string' and not IsMobile then
                 Library:AddToolTip(tooltip, self.Outer)
             end
             return self
@@ -1557,7 +1641,7 @@ do
 
             ProcessButtonParams('SubButton', SubButton, ...)
 
-            self.Outer.Size = UDim2.new(0.5, -2, 0, 20)
+            self.Outer.Size = UDim2.new(0.5, -2, 0, math.max(20 * Library.MobileScale, Library.MinTouchSize))
 
             SubButton.Outer, SubButton.Inner, SubButton.Label = CreateBaseButton(SubButton)
 
@@ -1566,13 +1650,13 @@ do
             SubButton.Outer.Parent = self.Outer
 
             function SubButton:AddTooltip(tooltip)
-                if type(tooltip) == 'string' then
+                if type(tooltip) == 'string' and not IsMobile then
                     Library:AddToolTip(tooltip, self.Outer)
                 end
                 return SubButton
             end
 
-            if type(SubButton.Tooltip) == 'string' then
+            if type(SubButton.Tooltip) == 'string' and not IsMobile then
                 SubButton:AddTooltip(SubButton.Tooltip)
             end
 
@@ -1580,7 +1664,7 @@ do
             return SubButton
         end
 
-        if type(Button.Tooltip) == 'string' then
+        if type(Button.Tooltip) == 'string' and not IsMobile then
             Button:AddTooltip(Button.Tooltip)
         end
 
@@ -1644,8 +1728,8 @@ do
         local Container = Groupbox.Container;
 
         local InputLabel = Library:CreateLabel({
-            Size = UDim2.new(1, 0, 0, 15);
-            TextSize = 14;
+            Size = UDim2.new(1, 0, 0, 15 * Library.MobileScale);
+            TextSize = 14 * Library.MobileScale;
             Text = Info.Text;
             TextXAlignment = Enum.TextXAlignment.Left;
             ZIndex = 5;
@@ -1654,10 +1738,11 @@ do
 
         Groupbox:AddBlank(1);
 
+        local TextBoxHeight = math.max(20 * Library.MobileScale, Library.MinTouchSize);
         local TextBoxOuter = Library:Create('Frame', {
             BackgroundColor3 = Color3.new(0, 0, 0);
             BorderColor3 = Color3.new(0, 0, 0);
-            Size = UDim2.new(1, -4, 0, 20);
+            Size = UDim2.new(1, -4, 0, TextBoxHeight);
             ZIndex = 5;
             Parent = Container;
         });
@@ -1681,7 +1766,7 @@ do
             { BorderColor3 = 'Black' }
         );
 
-        if type(Info.Tooltip) == 'string' then
+        if type(Info.Tooltip) == 'string' and not IsMobile then
             Library:AddToolTip(Info.Tooltip, TextBoxOuter)
         end
 
@@ -1717,7 +1802,7 @@ do
 
             Text = Info.Default or '';
             TextColor3 = Library.FontColor;
-            TextSize = 14;
+            TextSize = 14 * Library.MobileScale;
             TextStrokeTransparency = 0;
             TextXAlignment = Enum.TextXAlignment.Left;
 
@@ -1759,28 +1844,20 @@ do
             end);
         end
 
-        -- https://devforum.roblox.com/t/how-to-make-textboxes-follow-current-cursor-position/1368429/6
-        -- thank you nicemike40 :)
-
         local function Update()
             local PADDING = 2
             local reveal = Container.AbsoluteSize.X
 
             if not Box:IsFocused() or Box.TextBounds.X <= reveal - 2 * PADDING then
-                -- we aren't focused, or we fit so be normal
                 Box.Position = UDim2.new(0, PADDING, 0, 0)
             else
-                -- we are focused and don't fit, so adjust position
                 local cursor = Box.CursorPosition
                 if cursor ~= -1 then
-                    -- calculate pixel width of text from start to cursor
                     local subtext = string.sub(Box.Text, 1, cursor-1)
                     local width = TextService:GetTextSize(subtext, Box.TextSize, Box.Font, Vector2.new(math.huge, math.huge)).X
 
-                    -- check if we're inside the box with the cursor
                     local currentCursorPos = Box.Position.X.Offset + width
 
-                    -- adjust if necessary
                     if currentCursorPos < PADDING then
                         Box.Position = UDim2.fromOffset(PADDING-width, 0)
                     elseif currentCursorPos > reveal - PADDING - 1 then
@@ -1829,10 +1906,11 @@ do
         local Groupbox = self;
         local Container = Groupbox.Container;
 
+        local ToggleSize = math.max(13 * Library.MobileScale, IsMobile and 24 or 13);
         local ToggleOuter = Library:Create('Frame', {
             BackgroundColor3 = Color3.new(0, 0, 0);
             BorderColor3 = Color3.new(0, 0, 0);
-            Size = UDim2.new(0, 13, 0, 13);
+            Size = UDim2.new(0, ToggleSize, 0, ToggleSize);
             ZIndex = 5;
             Parent = Container;
         });
@@ -1858,7 +1936,7 @@ do
         local ToggleLabel = Library:CreateLabel({
             Size = UDim2.new(0, 216, 1, 0);
             Position = UDim2.new(1, 6, 0, 0);
-            TextSize = 14;
+            TextSize = 14 * Library.MobileScale;
             Text = Info.Text;
             TextXAlignment = Enum.TextXAlignment.Left;
             ZIndex = 6;
@@ -1889,7 +1967,7 @@ do
             Toggle:Display();
         end;
 
-        if type(Info.Tooltip) == 'string' then
+        if type(Info.Tooltip) == 'string' and not IsMobile then
             Library:AddToolTip(Info.Tooltip, ToggleRegion)
         end
 
@@ -1925,20 +2003,20 @@ do
         end;
 
         ToggleRegion.InputBegan:Connect(function(Input)
-            if Input.UserInputType == Enum.UserInputType.MouseButton1 and not Library:MouseIsOverOpenedFrame() then
-                Toggle:SetValue(not Toggle.Value) -- Why was it not like this from the start?
+            if Library:IsClickInput(Input) and not Library:MouseIsOverOpenedFrame() then
+                Toggle:SetValue(not Toggle.Value)
                 Library:AttemptSave();
             end;
         end);
 
-        if Toggle.Risky then
+                if Toggle.Risky then
             Library:RemoveFromRegistry(ToggleLabel)
             ToggleLabel.TextColor3 = Library.RiskColor
             Library:AddToRegistry(ToggleLabel, { TextColor3 = 'RiskColor' })
         end
 
         Toggle:Display();
-        Groupbox:AddBlank(Info.BlankSize or 5 + 2);
+        Groupbox:AddBlank(Info.BlankSize or (5 + 2) * Library.MobileScale);
         Groupbox:Resize();
 
         Toggle.TextLabel = ToggleLabel;
@@ -1964,7 +2042,7 @@ do
             Min = Info.Min;
             Max = Info.Max;
             Rounding = Info.Rounding;
-            MaxSize = 232;
+            MaxSize = 232 * Library.MobileScale;
             Type = 'Slider';
             Callback = Info.Callback or function(Value) end;
         };
@@ -1974,8 +2052,8 @@ do
 
         if not Info.Compact then
             Library:CreateLabel({
-                Size = UDim2.new(1, 0, 0, 10);
-                TextSize = 14;
+                Size = UDim2.new(1, 0, 0, 10 * Library.MobileScale);
+                TextSize = 14 * Library.MobileScale;
                 Text = Info.Text;
                 TextXAlignment = Enum.TextXAlignment.Left;
                 TextYAlignment = Enum.TextYAlignment.Bottom;
@@ -1986,10 +2064,11 @@ do
             Groupbox:AddBlank(3);
         end
 
+        local SliderHeight = math.max(13 * Library.MobileScale, IsMobile and 24 or 13);
         local SliderOuter = Library:Create('Frame', {
             BackgroundColor3 = Color3.new(0, 0, 0);
             BorderColor3 = Color3.new(0, 0, 0);
-            Size = UDim2.new(1, -4, 0, 13);
+            Size = UDim2.new(1, -4, 0, SliderHeight);
             ZIndex = 5;
             Parent = Container;
         });
@@ -2040,7 +2119,7 @@ do
 
         local DisplayLabel = Library:CreateLabel({
             Size = UDim2.new(1, 0, 1, 0);
-            TextSize = 14;
+            TextSize = 14 * Library.MobileScale;
             Text = 'Infinite';
             ZIndex = 9;
             Parent = SliderInner;
@@ -2051,7 +2130,7 @@ do
             { BorderColor3 = 'Black' }
         );
 
-        if type(Info.Tooltip) == 'string' then
+        if type(Info.Tooltip) == 'string' and not IsMobile then
             Library:AddToolTip(Info.Tooltip, SliderOuter)
         end
 
@@ -2087,7 +2166,6 @@ do
                 return math.floor(Value);
             end;
 
-
             return tonumber(string.format('%.' .. Slider.Rounding .. 'f', Value))
         end;
 
@@ -2112,30 +2190,42 @@ do
         end;
 
         SliderInner.InputBegan:Connect(function(Input)
-            if Input.UserInputType == Enum.UserInputType.MouseButton1 and not Library:MouseIsOverOpenedFrame() then
-                local mPos = Mouse.X;
-                local gPos = Fill.Size.X.Offset;
-                local Diff = mPos - (Fill.AbsolutePosition.X + gPos);
-
-                while InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) do
-                    local nMPos = Mouse.X;
-                    local nX = math.clamp(gPos + (nMPos - mPos) + Diff, 0, Slider.MaxSize);
-
-                    local nValue = Slider:GetValueFromXOffset(nX);
+            if Library:IsClickInput(Input) and not Library:MouseIsOverOpenedFrame() then
+                local function UpdateSlider()
+                    local mPos = Mouse.X;
+                    local sPos = SliderInner.AbsolutePosition.X;
+                    local sSize = SliderInner.AbsoluteSize.X;
+                    
+                    local nX = math.clamp(mPos - sPos, 0, sSize);
+                    local nValue = Slider:GetValueFromXOffset(nX / sSize * Slider.MaxSize);
+                    
                     local OldValue = Slider.Value;
                     Slider.Value = nValue;
-
                     Slider:Display();
 
                     if nValue ~= OldValue then
                         Library:SafeCallback(Slider.Callback, Slider.Value);
                         Library:SafeCallback(Slider.Changed, Slider.Value);
                     end;
-
-                    RenderStepped:Wait();
-                end;
-
-                Library:AttemptSave();
+                end
+                
+                UpdateSlider();
+                
+                local MoveCon, ReleaseCon;
+                
+                MoveCon = InputService.InputChanged:Connect(function(MoveInput)
+                    if MoveInput.UserInputType == Enum.UserInputType.MouseMovement or MoveInput.UserInputType == Enum.UserInputType.Touch then
+                        UpdateSlider();
+                    end
+                end)
+                
+                ReleaseCon = InputService.InputEnded:Connect(function(EndInput)
+                    if Library:IsClickInput(EndInput) then
+                        MoveCon:Disconnect();
+                        ReleaseCon:Disconnect();
+                        Library:AttemptSave();
+                    end
+                end)
             end;
         end);
 
@@ -2169,7 +2259,7 @@ do
             Value = Info.Multi and {};
             Multi = Info.Multi;
             Type = 'Dropdown';
-            SpecialType = Info.SpecialType; -- can be either 'Player' or 'Team'
+            SpecialType = Info.SpecialType;
             Callback = Info.Callback or function(Value) end;
         };
 
@@ -2180,8 +2270,8 @@ do
 
         if not Info.Compact then
             local DropdownLabel = Library:CreateLabel({
-                Size = UDim2.new(1, 0, 0, 10);
-                TextSize = 14;
+                Size = UDim2.new(1, 0, 0, 10 * Library.MobileScale);
+                TextSize = 14 * Library.MobileScale;
                 Text = Info.Text;
                 TextXAlignment = Enum.TextXAlignment.Left;
                 TextYAlignment = Enum.TextYAlignment.Bottom;
@@ -2198,10 +2288,11 @@ do
             end;
         end;
 
+        local DropdownHeight = math.max(20 * Library.MobileScale, Library.MinTouchSize);
         local DropdownOuter = Library:Create('Frame', {
             BackgroundColor3 = Color3.new(0, 0, 0);
             BorderColor3 = Color3.new(0, 0, 0);
-            Size = UDim2.new(1, -4, 0, 20);
+            Size = UDim2.new(1, -4, 0, DropdownHeight);
             ZIndex = 5;
             Parent = Container;
         });
@@ -2236,8 +2327,8 @@ do
         local DropdownArrow = Library:Create('ImageLabel', {
             AnchorPoint = Vector2.new(0, 0.5);
             BackgroundTransparency = 1;
-            Position = UDim2.new(1, -16, 0.5, 0);
-            Size = UDim2.new(0, 12, 0, 12);
+            Position = UDim2.new(1, -16 * Library.MobileScale, 0.5, 0);
+            Size = UDim2.new(0, 12 * Library.MobileScale, 0, 12 * Library.MobileScale);
             Image = 'http://www.roblox.com/asset/?id=6282522798';
             ZIndex = 8;
             Parent = DropdownInner;
@@ -2246,7 +2337,7 @@ do
         local ItemList = Library:CreateLabel({
             Position = UDim2.new(0, 5, 0, 0);
             Size = UDim2.new(1, -5, 1, 0);
-            TextSize = 14;
+            TextSize = 14 * Library.MobileScale;
             Text = '--';
             TextXAlignment = Enum.TextXAlignment.Left;
             TextWrapped = true;
@@ -2259,11 +2350,11 @@ do
             { BorderColor3 = 'Black' }
         );
 
-        if type(Info.Tooltip) == 'string' then
+        if type(Info.Tooltip) == 'string' and not IsMobile then
             Library:AddToolTip(Info.Tooltip, DropdownOuter)
         end
 
-        local MAX_DROPDOWN_ITEMS = 8;
+        local MAX_DROPDOWN_ITEMS = IsMobile and 6 or 8;
 
         local ListOuter = Library:Create('Frame', {
             BackgroundColor3 = Color3.new(0, 0, 0);
@@ -2278,7 +2369,7 @@ do
         end;
 
         local function RecalculateListSize(YSize)
-            ListOuter.Size = UDim2.fromOffset(DropdownOuter.AbsoluteSize.X, YSize or (MAX_DROPDOWN_ITEMS * 20 + 2))
+            ListOuter.Size = UDim2.fromOffset(DropdownOuter.AbsoluteSize.X, YSize or (MAX_DROPDOWN_ITEMS * 20 * Library.MobileScale + 2))
         end;
 
         RecalculateListPosition();
@@ -2312,7 +2403,7 @@ do
             TopImage = 'rbxasset://textures/ui/Scroll/scroll-middle.png',
             BottomImage = 'rbxasset://textures/ui/Scroll/scroll-middle.png',
 
-            ScrollBarThickness = 3,
+            ScrollBarThickness = IsMobile and 8 or 3,
             ScrollBarImageColor3 = Library.AccentColor,
         });
 
@@ -2371,6 +2462,7 @@ do
             end;
 
             local Count = 0;
+            local ItemHeight = math.max(20 * Library.MobileScale, IsMobile and 36 or 20);
 
             for Idx, Value in next, Values do
                 local Table = {};
@@ -2381,7 +2473,7 @@ do
                     BackgroundColor3 = Library.MainColor;
                     BorderColor3 = Library.OutlineColor;
                     BorderMode = Enum.BorderMode.Middle;
-                    Size = UDim2.new(1, -1, 0, 20);
+                    Size = UDim2.new(1, -1, 0, ItemHeight);
                     ZIndex = 23;
                     Active = true,
                     Parent = Scrolling;
@@ -2396,7 +2488,7 @@ do
                     Active = false;
                     Size = UDim2.new(1, -6, 1, 0);
                     Position = UDim2.new(0, 6, 0, 0);
-                    TextSize = 14;
+                    TextSize = 14 * Library.MobileScale;
                     Text = Value;
                     TextXAlignment = Enum.TextXAlignment.Left;
                     ZIndex = 25;
@@ -2428,7 +2520,7 @@ do
                 end;
 
                 ButtonLabel.InputBegan:Connect(function(Input)
-                    if Input.UserInputType == Enum.UserInputType.MouseButton1 then
+                    if Library:IsClickInput(Input) then
                         local Try = not Selected;
 
                         if Dropdown:GetActiveValues() == 1 and (not Try) and (not Info.AllowNull) then
@@ -2472,9 +2564,9 @@ do
                 Buttons[Button] = Table;
             end;
 
-            Scrolling.CanvasSize = UDim2.fromOffset(0, (Count * 20) + 1);
+            Scrolling.CanvasSize = UDim2.fromOffset(0, (Count * ItemHeight) + 1);
 
-            local Y = math.clamp(Count * 20, 0, MAX_DROPDOWN_ITEMS * 20) + 1;
+            local Y = math.clamp(Count * ItemHeight, 0, MAX_DROPDOWN_ITEMS * ItemHeight) + 1;
             RecalculateListSize(Y);
         end;
 
@@ -2529,7 +2621,7 @@ do
         end;
 
         DropdownOuter.InputBegan:Connect(function(Input)
-            if Input.UserInputType == Enum.UserInputType.MouseButton1 and not Library:MouseIsOverOpenedFrame() then
+            if Library:IsClickInput(Input) and not Library:MouseIsOverOpenedFrame() then
                 if ListOuter.Visible then
                     Dropdown:CloseDropdown();
                 else
@@ -2539,7 +2631,7 @@ do
         end);
 
         InputService.InputBegan:Connect(function(Input)
-            if Input.UserInputType == Enum.UserInputType.MouseButton1 then
+            if Library:IsClickInput(Input) then
                 local AbsPos, AbsSize = ListOuter.AbsolutePosition, ListOuter.AbsoluteSize;
 
                 if Mouse.X < AbsPos.X or Mouse.X > AbsPos.X + AbsSize.X
@@ -2683,7 +2775,7 @@ do
     Library.NotificationArea = Library:Create('Frame', {
         BackgroundTransparency = 1;
         Position = UDim2.new(0, 0, 0, 40);
-        Size = UDim2.new(0, 300, 0, 200);
+        Size = UDim2.new(0, 300 * Library.MobileScale, 0, 200);
         ZIndex = 100;
         Parent = ScreenGui;
     });
@@ -2698,7 +2790,7 @@ do
     local WatermarkOuter = Library:Create('Frame', {
         BorderColor3 = Color3.new(0, 0, 0);
         Position = UDim2.new(0, 100, 0, -25);
-        Size = UDim2.new(0, 213, 0, 20);
+        Size = UDim2.new(0, 213 * Library.MobileScale, 0, 20 * Library.MobileScale);
         ZIndex = 200;
         Visible = false;
         Parent = ScreenGui;
@@ -2747,7 +2839,7 @@ do
     local WatermarkLabel = Library:CreateLabel({
         Position = UDim2.new(0, 5, 0, 0);
         Size = UDim2.new(1, -4, 1, 0);
-        TextSize = 14;
+        TextSize = 14 * Library.MobileScale;
         TextXAlignment = Enum.TextXAlignment.Left;
         ZIndex = 203;
         Parent = InnerFrame;
@@ -2757,13 +2849,11 @@ do
     Library.WatermarkText = WatermarkLabel;
     Library:MakeDraggable(Library.Watermark);
 
-
-
     local KeybindOuter = Library:Create('Frame', {
         AnchorPoint = Vector2.new(0, 0.5);
         BorderColor3 = Color3.new(0, 0, 0);
         Position = UDim2.new(0, 10, 0.5, 0);
-        Size = UDim2.new(0, 210, 0, 20);
+        Size = UDim2.new(0, 210 * Library.MobileScale, 0, 20 * Library.MobileScale);
         Visible = false;
         ZIndex = 100;
         Parent = ScreenGui;
@@ -2796,7 +2886,7 @@ do
     }, true);
 
     local KeybindLabel = Library:CreateLabel({
-        Size = UDim2.new(1, 0, 0, 20);
+        Size = UDim2.new(1, 0, 0, 20 * Library.MobileScale);
         Position = UDim2.fromOffset(5, 2),
         TextXAlignment = Enum.TextXAlignment.Center,
 
@@ -2807,8 +2897,8 @@ do
 
     local KeybindContainer = Library:Create('Frame', {
         BackgroundTransparency = 1;
-        Size = UDim2.new(1, 0, 1, -20);
-        Position = UDim2.new(0, 0, 0, 20);
+        Size = UDim2.new(1, 0, 1, -20 * Library.MobileScale);
+        Position = UDim2.new(0, 0, 0, 20 * Library.MobileScale);
         ZIndex = 1;
         Parent = KeybindInner;
     });
@@ -2834,7 +2924,7 @@ function Library:SetWatermarkVisibility(Bool)
 end;
 
 function Library:SetWatermark(Text)
-    local X, Y = Library:GetTextBounds(Text, Library.Font, 14);
+    local X, Y = Library:GetTextBounds(Text, Library.Font, 14 * Library.MobileScale);
     Library.Watermark.Size = UDim2.new(0, X + 15, 0, (Y * 1.5) + 3);
     Library:SetWatermarkVisibility(true)
 
@@ -2842,7 +2932,7 @@ function Library:SetWatermark(Text)
 end;
 
 function Library:Notify(Text, Time)
-    local XSize, YSize = Library:GetTextBounds(Text, Library.Font, 14);
+    local XSize, YSize = Library:GetTextBounds(Text, Library.Font, 14 * Library.MobileScale);
 
     YSize = YSize + 7
 
@@ -2901,7 +2991,7 @@ function Library:Notify(Text, Time)
         Size = UDim2.new(1, -4, 1, 0);
         Text = Text;
         TextXAlignment = Enum.TextXAlignment.Left;
-        TextSize = 14;
+        TextSize = 14 * Library.MobileScale;
         ZIndex = 103;
         Parent = InnerFrame;
     });
@@ -2948,7 +3038,7 @@ function Library:CreateWindow(...)
     if type(Config.MenuFadeTime) ~= 'number' then Config.MenuFadeTime = 0.2 end
 
     if typeof(Config.Position) ~= 'UDim2' then Config.Position = UDim2.fromOffset(175, 50) end
-    if typeof(Config.Size) ~= 'UDim2' then Config.Size = UDim2.fromOffset(550, 600) end
+    if typeof(Config.Size) ~= 'UDim2' then Config.Size = UDim2.fromOffset(550 * Library.MobileScale, 600 * Library.MobileScale) end
 
     if Config.Center then
         Config.AnchorPoint = Vector2.new(0.5, 0.5)
@@ -2970,7 +3060,7 @@ function Library:CreateWindow(...)
         Parent = ScreenGui;
     });
 
-    Library:MakeDraggable(Outer, 25);
+    Library:MakeDraggable(Outer, 25 * Library.MobileScale);
 
     local Inner = Library:Create('Frame', {
         BackgroundColor3 = Library.MainColor;
@@ -2989,7 +3079,7 @@ function Library:CreateWindow(...)
 
     local WindowLabel = Library:CreateLabel({
         Position = UDim2.new(0, 7, 0, 0);
-        Size = UDim2.new(0, 0, 0, 25);
+        Size = UDim2.new(0, 0, 0, 25 * Library.MobileScale);
         Text = Config.Title or '';
         TextXAlignment = Enum.TextXAlignment.Center;
         ZIndex = 1;
@@ -2999,8 +3089,8 @@ function Library:CreateWindow(...)
     local MainSectionOuter = Library:Create('Frame', {
         BackgroundColor3 = Library.BackgroundColor;
         BorderColor3 = Library.OutlineColor;
-        Position = UDim2.new(0, 8, 0, 25);
-        Size = UDim2.new(1, -16, 1, -33);
+        Position = UDim2.new(0, 8, 0, 25 * Library.MobileScale);
+        Size = UDim2.new(1, -16, 1, -33 * Library.MobileScale);
         ZIndex = 1;
         Parent = Inner;
     });
@@ -3027,7 +3117,7 @@ function Library:CreateWindow(...)
     local TabArea = Library:Create('Frame', {
         BackgroundTransparency = 1;
         Position = UDim2.new(0, 8, 0, 8);
-        Size = UDim2.new(1, -16, 0, 21);
+        Size = UDim2.new(1, -16, 0, 21 * Library.MobileScale);
         ZIndex = 1;
         Parent = MainSectionInner;
     });
@@ -3042,12 +3132,11 @@ function Library:CreateWindow(...)
     local TabContainer = Library:Create('Frame', {
         BackgroundColor3 = Library.MainColor;
         BorderColor3 = Library.OutlineColor;
-        Position = UDim2.new(0, 8, 0, 30);
-        Size = UDim2.new(1, -16, 1, -38);
+        Position = UDim2.new(0, 8, 0, 30 * Library.MobileScale);
+        Size = UDim2.new(1, -16, 1, -38 * Library.MobileScale);
         ZIndex = 2;
         Parent = MainSectionInner;
     });
-    
 
     Library:AddToRegistry(TabContainer, {
         BackgroundColor3 = 'MainColor';
@@ -3064,7 +3153,7 @@ function Library:CreateWindow(...)
             Tabboxes = {};
         };
 
-        local TabButtonWidth = Library:GetTextBounds(Name, Library.Font, 16);
+        local TabButtonWidth = Library:GetTextBounds(Name, Library.Font, 16 * Library.MobileScale);
 
         local TabButton = Library:Create('Frame', {
             BackgroundColor3 = Library.BackgroundColor;
@@ -3115,7 +3204,7 @@ function Library:CreateWindow(...)
             BackgroundTransparency = 1;
             BorderSizePixel = 0;
             Position = UDim2.new(0, 8 - 1, 0, 8 - 1);
-            Size = UDim2.new(0.5, -12 + 2, 0, 507 + 2);
+            Size = UDim2.new(0.5, -12 + 2, 0, 507 * Library.MobileScale + 2);
             CanvasSize = UDim2.new(0, 0, 0, 0);
             BottomImage = '';
             TopImage = '';
@@ -3128,7 +3217,7 @@ function Library:CreateWindow(...)
             BackgroundTransparency = 1;
             BorderSizePixel = 0;
             Position = UDim2.new(0.5, 4 + 1, 0, 8 - 1);
-            Size = UDim2.new(0.5, -12 + 2, 0, 507 + 2);
+            Size = UDim2.new(0.5, -12 + 2, 0, 507 * Library.MobileScale + 2);
             CanvasSize = UDim2.new(0, 0, 0, 0);
             BottomImage = '';
             TopImage = '';
@@ -3189,7 +3278,7 @@ function Library:CreateWindow(...)
                 BackgroundColor3 = Library.BackgroundColor;
                 BorderColor3 = Library.OutlineColor;
                 BorderMode = Enum.BorderMode.Inset;
-                Size = UDim2.new(1, 0, 0, 507 + 2);
+                Size = UDim2.new(1, 0, 0, 507 * Library.MobileScale + 2);
                 ZIndex = 2;
                 Parent = Info.Side == 1 and LeftSide or RightSide;
             });
@@ -3202,7 +3291,6 @@ function Library:CreateWindow(...)
             local BoxInner = Library:Create('Frame', {
                 BackgroundColor3 = Library.BackgroundColor;
                 BorderColor3 = Color3.new(0, 0, 0);
-                -- BorderMode = Enum.BorderMode.Inset;
                 Size = UDim2.new(1, -2, 1, -2);
                 Position = UDim2.new(0, 1, 0, 1);
                 ZIndex = 4;
@@ -3226,9 +3314,9 @@ function Library:CreateWindow(...)
             });
 
             local GroupboxLabel = Library:CreateLabel({
-                Size = UDim2.new(1, 0, 0, 18);
+                Size = UDim2.new(1, 0, 0, 18 * Library.MobileScale);
                 Position = UDim2.new(0, 4, 0, 2);
-                TextSize = 14;
+                TextSize = 14 * Library.MobileScale;
                 Text = Info.Name;
                 TextXAlignment = Enum.TextXAlignment.Left;
                 ZIndex = 5;
@@ -3237,8 +3325,8 @@ function Library:CreateWindow(...)
 
             local Container = Library:Create('Frame', {
                 BackgroundTransparency = 1;
-                Position = UDim2.new(0, 4, 0, 20);
-                Size = UDim2.new(1, -4, 1, -20);
+                Position = UDim2.new(0, 4, 0, 20 * Library.MobileScale);
+                Size = UDim2.new(1, -4, 1, -20 * Library.MobileScale);
                 ZIndex = 1;
                 Parent = BoxInner;
             });
@@ -3258,7 +3346,7 @@ function Library:CreateWindow(...)
                     end;
                 end;
 
-                BoxOuter.Size = UDim2.new(1, 0, 0, 20 + Size + 2 + 2);
+                BoxOuter.Size = UDim2.new(1, 0, 0, 20 * Library.MobileScale + Size + 2 + 2);
             end;
 
             Groupbox.Container = Container;
@@ -3302,7 +3390,6 @@ function Library:CreateWindow(...)
             local BoxInner = Library:Create('Frame', {
                 BackgroundColor3 = Library.BackgroundColor;
                 BorderColor3 = Color3.new(0, 0, 0);
-                -- BorderMode = Enum.BorderMode.Inset;
                 Size = UDim2.new(1, -2, 1, -2);
                 Position = UDim2.new(0, 1, 0, 1);
                 ZIndex = 4;
@@ -3328,7 +3415,7 @@ function Library:CreateWindow(...)
             local TabboxButtons = Library:Create('Frame', {
                 BackgroundTransparency = 1;
                 Position = UDim2.new(0, 0, 0, 1);
-                Size = UDim2.new(1, 0, 0, 18);
+                Size = UDim2.new(1, 0, 0, 18 * Library.MobileScale);
                 ZIndex = 5;
                 Parent = BoxInner;
             });
@@ -3357,7 +3444,7 @@ function Library:CreateWindow(...)
 
                 local ButtonLabel = Library:CreateLabel({
                     Size = UDim2.new(1, 0, 1, 0);
-                    TextSize = 14;
+                    TextSize = 14 * Library.MobileScale;
                     Text = Name;
                     TextXAlignment = Enum.TextXAlignment.Center;
                     ZIndex = 7;
@@ -3380,8 +3467,8 @@ function Library:CreateWindow(...)
 
                 local Container = Library:Create('Frame', {
                     BackgroundTransparency = 1;
-                    Position = UDim2.new(0, 4, 0, 20);
-                    Size = UDim2.new(1, -4, 1, -20);
+                    Position = UDim2.new(0, 4, 0, 20 * Library.MobileScale);
+                    Size = UDim2.new(1, -4, 1, -20 * Library.MobileScale);
                     ZIndex = 1;
                     Visible = false;
                     Parent = BoxInner;
@@ -3440,11 +3527,11 @@ function Library:CreateWindow(...)
                         end;
                     end;
 
-                    BoxOuter.Size = UDim2.new(1, 0, 0, 20 + Size + 2 + 2);
+                    BoxOuter.Size = UDim2.new(1, 0, 0, 20 * Library.MobileScale + Size + 2 + 2);
                 end;
 
                 Button.InputBegan:Connect(function(Input)
-                    if Input.UserInputType == Enum.UserInputType.MouseButton1 and not Library:MouseIsOverOpenedFrame() then
+                    if Library:IsClickInput(Input) and not Library:MouseIsOverOpenedFrame() then
                         Tab:Show();
                         Tab:Resize();
                     end;
@@ -3458,7 +3545,6 @@ function Library:CreateWindow(...)
                 Tab:AddBlank(3);
                 Tab:Resize();
 
-                -- Show first tab (number is 2 cus of the UIListLayout that also sits in that instance)
                 if #TabboxButtons:GetChildren() == 2 then
                     Tab:Show();
                 end;
@@ -3480,12 +3566,11 @@ function Library:CreateWindow(...)
         end;
 
         TabButton.InputBegan:Connect(function(Input)
-            if Input.UserInputType == Enum.UserInputType.MouseButton1 then
+            if Library:IsClickInput(Input) then
                 Tab:ShowTab();
             end;
         end);
 
-        -- This was the first tab added, so we show it by default.
         if #TabContainer:GetChildren() == 1 then
             Tab:ShowTab();
         end;
@@ -3507,6 +3592,43 @@ function Library:CreateWindow(...)
     local Toggled = false;
     local Fading = false;
 
+    -- Create Mobile Toggle Button
+    local MobileToggleButton;
+    if IsMobile then
+        MobileToggleButton = Library:Create('TextButton', {
+            AnchorPoint = Vector2.new(1, 0);
+            BackgroundColor3 = Library.MainColor;
+            BorderColor3 = Library.AccentColor;
+            Position = UDim2.new(1, -10, 0, 10);
+            Size = UDim2.new(0, 50, 0, 50);
+            Text = '☰';
+            TextColor3 = Library.FontColor;
+            TextSize = 24;
+            Font = Library.Font;
+            ZIndex = 999;
+            Parent = ScreenGui;
+        });
+
+        Library:AddToRegistry(MobileToggleButton, {
+            BackgroundColor3 = 'MainColor';
+            BorderColor3 = 'AccentColor';
+            TextColor3 = 'FontColor';
+        });
+
+        local Corner = Library:Create('UICorner', {
+            CornerRadius = UDim.new(0, 8);
+            Parent = MobileToggleButton;
+        });
+
+        MobileToggleButton.MouseButton1Click:Connect(function()
+            task.spawn(Library.Toggle);
+        end);
+
+        MobileToggleButton.TouchTap:Connect(function()
+            task.spawn(Library.Toggle);
+        end);
+    end
+
     function Library:Toggle()
         if Fading then
             return;
@@ -3518,47 +3640,58 @@ function Library:CreateWindow(...)
         ModalElement.Modal = Toggled;
 
         if Toggled then
-            -- A bit scuffed, but if we're going from not toggled -> toggled we want to show the frame immediately so that the fade is visible.
             Outer.Visible = true;
 
-            task.spawn(function()
-                -- TODO: add cursor fade?
-                local State = InputService.MouseIconEnabled;
+            -- Hide mobile toggle button when menu is open
+            if MobileToggleButton then
+                MobileToggleButton.Visible = false;
+            end
 
-                local Cursor = Drawing.new('Triangle');
-                Cursor.Thickness = 1;
-                Cursor.Filled = true;
-                Cursor.Visible = true;
+            -- Desktop cursor handling (skip on mobile)
+            if not IsMobile then
+                task.spawn(function()
+                    local State = InputService.MouseIconEnabled;
 
-                local CursorOutline = Drawing.new('Triangle');
-                CursorOutline.Thickness = 1;
-                CursorOutline.Filled = false;
-                CursorOutline.Color = Color3.new(0, 0, 0);
-                CursorOutline.Visible = true;
+                    local Cursor = Drawing.new('Triangle');
+                    Cursor.Thickness = 1;
+                    Cursor.Filled = true;
+                    Cursor.Visible = true;
 
-                while Toggled and ScreenGui.Parent do
-                    InputService.MouseIconEnabled = false;
+                    local CursorOutline = Drawing.new('Triangle');
+                    CursorOutline.Thickness = 1;
+                    CursorOutline.Filled = false;
+                    CursorOutline.Color = Color3.new(0, 0, 0);
+                    CursorOutline.Visible = true;
 
-                    local mPos = InputService:GetMouseLocation();
+                    while Toggled and ScreenGui.Parent do
+                        InputService.MouseIconEnabled = false;
 
-                    Cursor.Color = Library.AccentColor;
+                        local mPos = InputService:GetMouseLocation();
 
-                    Cursor.PointA = Vector2.new(mPos.X, mPos.Y);
-                    Cursor.PointB = Vector2.new(mPos.X + 16, mPos.Y + 6);
-                    Cursor.PointC = Vector2.new(mPos.X + 6, mPos.Y + 16);
+                        Cursor.Color = Library.AccentColor;
 
-                    CursorOutline.PointA = Cursor.PointA;
-                    CursorOutline.PointB = Cursor.PointB;
-                    CursorOutline.PointC = Cursor.PointC;
+                        Cursor.PointA = Vector2.new(mPos.X, mPos.Y);
+                        Cursor.PointB = Vector2.new(mPos.X + 16, mPos.Y + 6);
+                        Cursor.PointC = Vector2.new(mPos.X + 6, mPos.Y + 16);
 
-                    RenderStepped:Wait();
-                end;
+                        CursorOutline.PointA = Cursor.PointA;
+                        CursorOutline.PointB = Cursor.PointB;
+                        CursorOutline.PointC = Cursor.PointC;
 
-                InputService.MouseIconEnabled = State;
+                        RenderStepped:Wait();
+                    end;
 
-                Cursor:Remove();
-                CursorOutline:Remove();
-            end);
+                    InputService.MouseIconEnabled = State;
+
+                    Cursor:Remove();
+                    CursorOutline:Remove();
+                end);
+            end
+        else
+            -- Show mobile toggle button when menu is closed
+            if MobileToggleButton then
+                MobileToggleButton.Visible = true;
+            end
         end;
 
         for _, Desc in next, Outer:GetDescendants() do
@@ -3603,6 +3736,11 @@ function Library:CreateWindow(...)
     end
 
     Library:GiveSignal(InputService.InputBegan:Connect(function(Input, Processed)
+        -- Skip keyboard toggle on mobile
+        if IsMobile then
+            return;
+        end
+
         if type(Library.ToggleKeybind) == 'table' and Library.ToggleKeybind.Type == 'KeyPicker' then
             if Input.UserInputType == Enum.UserInputType.Keyboard and Input.KeyCode.Name == Library.ToggleKeybind.Value then
                 task.spawn(Library.Toggle)
