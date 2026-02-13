@@ -49,7 +49,7 @@ local Library = {
     ScreenGui = ScreenGui;
     
     IsMobile = IsMobile;
-    MobileScale = IsMobile and 0.4 or 1; -- Scale factor for mobile elements
+    MobileScale = IsMobile and 0.7 or 1; -- Scale factor for mobile elements
     MinTouchSize = IsMobile and 26.4 or 20; -- Minimum touch target size
 };
 
