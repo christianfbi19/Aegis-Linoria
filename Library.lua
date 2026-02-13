@@ -49,8 +49,8 @@ local Library = {
     ScreenGui = ScreenGui;
     
     IsMobile = IsMobile;
-    MobileScale = IsMobile and 1.3 or 1; -- Scale factor for mobile elements
-    MinTouchSize = IsMobile and 44 or 20; -- Minimum touch target size
+    MobileScale = IsMobile and 0.6 or 1; -- Scale factor for mobile elements
+    MinTouchSize = IsMobile and 26.4 or 20; -- Minimum touch target size
 };
 
 local RainbowStep = 0
