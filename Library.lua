@@ -3608,41 +3608,84 @@ function Library:CreateWindow(...)
     local Toggled = false;
     local Fading = false;
 
-    -- Create Mobile Toggle Button
+    -- Create Mobile Toggle Button (Linoria-style)
     local MobileToggleButton;
     if IsMobile then
-        MobileToggleButton = Library:Create('TextButton', {
-            AnchorPoint = Vector2.new(1, 0);
-            BackgroundColor3 = Library.MainColor;
-            BorderColor3 = Library.AccentColor;
-            Position = UDim2.new(1, -10, 0, 10);
-            Size = UDim2.new(0, 50, 0, 50);
-            Text = '☰';
-            TextColor3 = Library.FontColor;
-            TextSize = 24;
-            Font = Library.Font;
-            ZIndex = 999;
+        local ToggleUIOuter = Library:Create('Frame', {
+            BorderColor3 = Color3.new(0, 0, 0);
+            Position = UDim2.new(0.008, 0, 0.018, 0);
+            Size = UDim2.new(0, 85, 0, 30);
+            ZIndex = 200;
+            Visible = true;
             Parent = ScreenGui;
         });
 
-        Library:AddToRegistry(MobileToggleButton, {
+        local ToggleUIInner = Library:Create('Frame', {
+            BackgroundColor3 = Library.MainColor;
+            BorderColor3 = Library.AccentColor;
+            BorderMode = Enum.BorderMode.Inset;
+            Size = UDim2.new(1, 0, 1, 0);
+            ZIndex = 201;
+            Parent = ToggleUIOuter;
+        });
+
+        Library:AddToRegistry(ToggleUIInner, {
             BackgroundColor3 = 'MainColor';
             BorderColor3 = 'AccentColor';
+        });
+
+        local ToggleUIInnerFrame = Library:Create('Frame', {
+            BackgroundColor3 = Color3.new(1, 1, 1);
+            BorderSizePixel = 0;
+            Position = UDim2.new(0, 1, 0, 1);
+            Size = UDim2.new(1, -2, 1, -2);
+            ZIndex = 202;
+            Parent = ToggleUIInner;
+        });
+
+        local ToggleUIGradient = Library:Create('UIGradient', {
+            Color = ColorSequence.new({
+                ColorSequenceKeypoint.new(0, Library:GetDarkerColor(Library.MainColor));
+                ColorSequenceKeypoint.new(1, Library.MainColor);
+            });
+            Rotation = -90;
+            Parent = ToggleUIInnerFrame;
+        });
+
+        Library:AddToRegistry(ToggleUIGradient, {
+            Color = function()
+                return ColorSequence.new({
+                    ColorSequenceKeypoint.new(0, Library:GetDarkerColor(Library.MainColor));
+                    ColorSequenceKeypoint.new(1, Library.MainColor);
+                });
+            end;
+        });
+
+        local ToggleUIButton = Library:Create('TextButton', {
+            Position = UDim2.new(0, 5, 0, 0);
+            Size = UDim2.new(1, -4, 1, 0);
+            BackgroundTransparency = 1;
+            Font = Library.Font;
+            Text = 'Toggle UI';
+            TextColor3 = Library.FontColor;
+            TextSize = 14;
+            TextXAlignment = Enum.TextXAlignment.Left;
+            TextStrokeTransparency = 0;
+            ZIndex = 203;
+            Parent = ToggleUIInnerFrame;
+        });
+
+        Library:AddToRegistry(ToggleUIButton, {
             TextColor3 = 'FontColor';
         });
 
-        local Corner = Library:Create('UICorner', {
-            CornerRadius = UDim.new(0, 8);
-            Parent = MobileToggleButton;
-        });
+        Library:MakeDraggableUsingParent(ToggleUIButton, ToggleUIOuter);
 
-        MobileToggleButton.MouseButton1Click:Connect(function()
+        ToggleUIButton.MouseButton1Down:Connect(function()
             task.spawn(Library.Toggle);
         end);
 
-        MobileToggleButton.TouchTap:Connect(function()
-            task.spawn(Library.Toggle);
-        end);
+        MobileToggleButton = ToggleUIOuter;
     end
 
     function Library:Toggle()
