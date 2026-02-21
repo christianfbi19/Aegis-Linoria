@@ -49,8 +49,8 @@ local Library = {
     ScreenGui = ScreenGui;
     
     IsMobile = IsMobile;
-    MobileScale = IsMobile and 0.7 or 1; -- Scale factor for mobile elements
-    MinTouchSize = IsMobile and 26.4 or 20; -- Minimum touch target size
+    MobileScale = IsMobile and 0.7 or 1;
+    MinTouchSize = IsMobile and 26.4 or 20;
 };
 
 local RainbowStep = 0
@@ -97,7 +97,6 @@ local function GetTeamsString()
     return TeamList;
 end;
 
--- Helper function to get input position (works for both mouse and touch)
 function Library:GetInputPosition(Input)
     if Input and Input.Position then
         return Input.Position.X, Input.Position.Y;
@@ -105,18 +104,15 @@ function Library:GetInputPosition(Input)
     return Mouse.X, Mouse.Y;
 end
 
--- Helper function to check if input is a click/tap
 function Library:IsClickInput(Input)
     return Input.UserInputType == Enum.UserInputType.MouseButton1 
         or Input.UserInputType == Enum.UserInputType.Touch;
 end
 
--- Helper function to check if input is a secondary click (right click)
 function Library:IsSecondaryInput(Input)
     return Input.UserInputType == Enum.UserInputType.MouseButton2;
 end
 
--- Helper function to check if clicking/touching is active
 function Library:IsInputActive()
     return InputService:IsMouseButtonPressed(Enum.UserInputType.MouseButton1) 
         or #InputService:GetTouchLocations() > 0;
@@ -240,7 +236,6 @@ function Library:MakeDraggable(Instance, Cutoff)
 end;
 
 function Library:AddToolTip(InfoStr, HoverInstance)
-    -- Skip tooltips on mobile
     if IsMobile then
         return;
     end
@@ -1079,7 +1074,6 @@ do
     end;
 
     function Funcs:AddKeyPicker(Idx, Info)
-        -- Skip KeyPicker on mobile
         if IsMobile then
             return self;
         end
@@ -1242,6 +1236,9 @@ do
 
             Library.RegistryMap[ContainerLabel].Properties.TextColor3 = State and 'AccentColor' or 'FontColor';
 
+            -- Auto-show the keybind frame when there are active keybinds
+            Library.KeybindFrame.Visible = true;
+
             local YSize = 0
             local XSize = 0
 
@@ -1254,7 +1251,7 @@ do
                 end;
             end;
 
-            Library.KeybindFrame.Size = UDim2.new(0, math.max(XSize + 10, 210), 0, YSize + 23)
+            Library.KeybindFrame.Size = UDim2.new(0, math.max(XSize + 10, 150), 0, YSize + 23)
         end;
 
         function KeyPicker:GetState()
@@ -2009,7 +2006,7 @@ do
             end;
         end);
 
-                if Toggle.Risky then
+        if Toggle.Risky then
             Library:RemoveFromRegistry(ToggleLabel)
             ToggleLabel.TextColor3 = Library.RiskColor
             Library:AddToRegistry(ToggleLabel, { TextColor3 = 'RiskColor' })
@@ -2853,7 +2850,7 @@ do
         AnchorPoint = Vector2.new(0, 0.5);
         BorderColor3 = Color3.new(0, 0, 0);
         Position = UDim2.new(0, 10, 0.5, 0);
-        Size = UDim2.new(0, 210 * Library.MobileScale, 0, 20 * Library.MobileScale);
+        Size = UDim2.new(0, 150 * Library.MobileScale, 0, 20 * Library.MobileScale);
         Visible = false;
         ZIndex = 100;
         Parent = ScreenGui;
@@ -3047,6 +3044,7 @@ function Library:CreateWindow(...)
 
     local Window = {
         Tabs = {};
+        TabButtons = {}; -- Track all tab buttons for equal resizing
     };
 
     local Outer = Library:Create('Frame', {
@@ -3077,9 +3075,10 @@ function Library:CreateWindow(...)
         BorderColor3 = 'AccentColor';
     });
 
+    -- [CHANGE 1] Title now spans full width so TextXAlignment.Center actually centers it
     local WindowLabel = Library:CreateLabel({
-        Position = UDim2.new(0, 7, 0, 0);
-        Size = UDim2.new(0, 0, 0, 25 * Library.MobileScale);
+        Position = UDim2.new(0, 0, 0, 0);
+        Size = UDim2.new(1, 0, 0, 25 * Library.MobileScale);
         Text = Config.Title or '';
         TextXAlignment = Enum.TextXAlignment.Center;
         ZIndex = 1;
@@ -3122,6 +3121,7 @@ function Library:CreateWindow(...)
         Parent = MainSectionInner;
     });
 
+    -- [CHANGE 2] Use UIListLayout for tab buttons so we can resize them evenly
     local TabListLayout = Library:Create('UIListLayout', {
         Padding = UDim.new(0, Config.TabPadding);
         FillDirection = Enum.FillDirection.Horizontal;
@@ -3143,6 +3143,19 @@ function Library:CreateWindow(...)
         BorderColor3 = 'OutlineColor';
     });
 
+    -- Helper: resize all tab buttons to fill the tab area equally
+    local function ResizeTabButtons()
+        local count = #Window.TabButtons
+        if count == 0 then return end
+        local tabPad = Config.TabPadding
+        -- Each button gets an equal share of the available width
+        local scale = 1 / count
+        local offset = -((tabPad * (count - 1)) / count)
+        for _, btn in next, Window.TabButtons do
+            btn.Size = UDim2.new(scale, offset, 1, 0)
+        end
+    end
+
     function Window:SetWindowTitle(Title)
         WindowLabel.Text = Title;
     end;
@@ -3153,12 +3166,11 @@ function Library:CreateWindow(...)
             Tabboxes = {};
         };
 
-        local TabButtonWidth = Library:GetTextBounds(Name, Library.Font, 16 * Library.MobileScale);
-
+        -- [CHANGE 3] Tab button starts with scale size; will be recalculated
         local TabButton = Library:Create('Frame', {
             BackgroundColor3 = Library.BackgroundColor;
             BorderColor3 = Library.OutlineColor;
-            Size = UDim2.new(0, TabButtonWidth + 8 + 4, 1, 0);
+            Size = UDim2.new(1, 0, 1, 0); -- temporary, will be resized
             ZIndex = 1;
             Parent = TabArea;
         });
@@ -3571,6 +3583,10 @@ function Library:CreateWindow(...)
             end;
         end);
 
+        -- Register this button and resize all tabs equally
+        table.insert(Window.TabButtons, TabButton);
+        ResizeTabButtons();
+
         if #TabContainer:GetChildren() == 1 then
             Tab:ShowTab();
         end;
@@ -3642,12 +3658,10 @@ function Library:CreateWindow(...)
         if Toggled then
             Outer.Visible = true;
 
-            -- Hide mobile toggle button when menu is open
             if MobileToggleButton then
                 MobileToggleButton.Visible = false;
             end
 
-            -- Desktop cursor handling (skip on mobile)
             if not IsMobile then
                 task.spawn(function()
                     local State = InputService.MouseIconEnabled;
@@ -3688,7 +3702,6 @@ function Library:CreateWindow(...)
                 end);
             end
         else
-            -- Show mobile toggle button when menu is closed
             if MobileToggleButton then
                 MobileToggleButton.Visible = true;
             end
@@ -3736,7 +3749,6 @@ function Library:CreateWindow(...)
     end
 
     Library:GiveSignal(InputService.InputBegan:Connect(function(Input, Processed)
-        -- Skip keyboard toggle on mobile
         if IsMobile then
             return;
         end
