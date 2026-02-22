@@ -3075,6 +3075,42 @@ function Library:CreateWindow(...)
         BorderColor3 = 'AccentColor';
     });
 
+    -- [CHANGE 2] Accent top bar (2px) at very top of window
+    local WindowAccentBar = Library:Create('Frame', {
+        BackgroundColor3 = Library.AccentColor;
+        BorderSizePixel = 0;
+        Size = UDim2.new(1, 0, 0, 2);
+        ZIndex = 2;
+        Parent = Inner;
+    });
+    Library:AddToRegistry(WindowAccentBar, { BackgroundColor3 = 'AccentColor' });
+
+    -- [CHANGE 3] Title bar gradient background
+    local TitleBarBg = Library:Create('Frame', {
+        BackgroundColor3 = Color3.new(1, 1, 1);
+        BorderSizePixel = 0;
+        Position = UDim2.new(0, 0, 0, 0);
+        Size = UDim2.new(1, 0, 0, 25);
+        ZIndex = 1;
+        Parent = Inner;
+    });
+    local TitleBarBgGradient = Library:Create('UIGradient', {
+        Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Library:GetDarkerColor(Library.MainColor));
+            ColorSequenceKeypoint.new(1, Library.MainColor);
+        });
+        Rotation = -90;
+        Parent = TitleBarBg;
+    });
+    Library:AddToRegistry(TitleBarBgGradient, {
+        Color = function()
+            return ColorSequence.new({
+                ColorSequenceKeypoint.new(0, Library:GetDarkerColor(Library.MainColor));
+                ColorSequenceKeypoint.new(1, Library.MainColor);
+            })
+        end
+    });
+
     -- [CHANGE 1] Title now spans full width so TextXAlignment.Center actually centers it
     local WindowLabel = Library:CreateLabel({
         Position = UDim2.new(0, 0, 0, 0);
@@ -3218,12 +3254,14 @@ function Library:CreateWindow(...)
             Position = UDim2.new(0, 8 - 1, 0, 8 - 1);
             Size = UDim2.new(0.5, -12 + 2, 0, 507 * Library.MobileScale + 2);
             CanvasSize = UDim2.new(0, 0, 0, 0);
-            BottomImage = '';
-            TopImage = '';
-            ScrollBarThickness = 0;
+            BottomImage = 'rbxasset://textures/ui/Scroll/scroll-middle.png';
+            TopImage = 'rbxasset://textures/ui/Scroll/scroll-middle.png';
+            ScrollBarThickness = 3;
+            ScrollBarImageColor3 = Library.AccentColor;
             ZIndex = 2;
             Parent = TabFrame;
         });
+        Library:AddToRegistry(LeftSide, { ScrollBarImageColor3 = 'AccentColor' });
 
         local RightSide = Library:Create('ScrollingFrame', {
             BackgroundTransparency = 1;
@@ -3231,12 +3269,14 @@ function Library:CreateWindow(...)
             Position = UDim2.new(0.5, 4 + 1, 0, 8 - 1);
             Size = UDim2.new(0.5, -12 + 2, 0, 507 * Library.MobileScale + 2);
             CanvasSize = UDim2.new(0, 0, 0, 0);
-            BottomImage = '';
-            TopImage = '';
-            ScrollBarThickness = 0;
+            BottomImage = 'rbxasset://textures/ui/Scroll/scroll-middle.png';
+            TopImage = 'rbxasset://textures/ui/Scroll/scroll-middle.png';
+            ScrollBarThickness = 3;
+            ScrollBarImageColor3 = Library.AccentColor;
             ZIndex = 2;
             Parent = TabFrame;
         });
+        Library:AddToRegistry(RightSide, { ScrollBarImageColor3 = 'AccentColor' });
 
         Library:Create('UIListLayout', {
             Padding = UDim.new(0, 8);
@@ -3268,6 +3308,9 @@ function Library:CreateWindow(...)
             Blocker.BackgroundTransparency = 0;
             TabButton.BackgroundColor3 = Library.MainColor;
             Library.RegistryMap[TabButton].Properties.BackgroundColor3 = 'MainColor';
+            -- [CHANGE 7] Active tab label uses accent color
+            TabButtonLabel.TextColor3 = Library.AccentColor;
+            Library.RegistryMap[TabButtonLabel].Properties.TextColor3 = 'AccentColor';
             TabFrame.Visible = true;
         end;
 
@@ -3275,6 +3318,9 @@ function Library:CreateWindow(...)
             Blocker.BackgroundTransparency = 1;
             TabButton.BackgroundColor3 = Library.BackgroundColor;
             Library.RegistryMap[TabButton].Properties.BackgroundColor3 = 'BackgroundColor';
+            -- [CHANGE 7] Inactive tab label resets to font color
+            TabButtonLabel.TextColor3 = Library.FontColor;
+            Library.RegistryMap[TabButtonLabel].Properties.TextColor3 = 'FontColor';
             TabFrame.Visible = false;
         end;
 
