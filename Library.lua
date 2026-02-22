@@ -2400,7 +2400,7 @@ do
             TopImage = 'rbxasset://textures/ui/Scroll/scroll-middle.png',
             BottomImage = 'rbxasset://textures/ui/Scroll/scroll-middle.png',
 
-            ScrollBarThickness = IsMobile and 0 or 0,
+            ScrollBarThickness = IsMobile and 8 or 3,
             ScrollBarImageColor3 = Library.AccentColor,
         });
 
@@ -2882,20 +2882,31 @@ do
         BackgroundColor3 = 'AccentColor';
     }, true);
 
+    -- Legend-style Keybinds header (overlaps top accent bar)
     local KeybindLabel = Library:CreateLabel({
-        Size = UDim2.new(1, 0, 0, 20 * Library.MobileScale);
-        Position = UDim2.fromOffset(5, 2),
-        TextXAlignment = Enum.TextXAlignment.Center,
-
+        BackgroundColor3 = Library.MainColor;
+        BackgroundTransparency = 0;
+        Size = UDim2.new(0, 0, 0, 14);
+        AutomaticSize = Enum.AutomaticSize.X;
+        Position = UDim2.new(0, 6, 0, -5);
+        TextXAlignment = Enum.TextXAlignment.Left;
         Text = 'Keybinds';
-        ZIndex = 104;
+        ZIndex = 106;
         Parent = KeybindInner;
     });
+    Library:Create('UIPadding', {
+        PaddingLeft = UDim.new(0, 3);
+        PaddingRight = UDim.new(0, 3);
+        Parent = KeybindLabel;
+    });
+    Library:AddToRegistry(KeybindLabel, {
+        BackgroundColor3 = 'MainColor';
+    }, true);
 
     local KeybindContainer = Library:Create('Frame', {
         BackgroundTransparency = 1;
-        Size = UDim2.new(1, 0, 1, -20 * Library.MobileScale);
-        Position = UDim2.new(0, 0, 0, 20 * Library.MobileScale);
+        Size = UDim2.new(1, 0, 1, -14);
+        Position = UDim2.new(0, 0, 0, 14);
         ZIndex = 1;
         Parent = KeybindInner;
     });
@@ -3075,11 +3086,31 @@ function Library:CreateWindow(...)
         BorderColor3 = 'AccentColor';
     });
 
+    -- Full-window background gradient (subtle, covers entire window area)
+    local WindowBgGradient = Library:Create('UIGradient', {
+        Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Library:GetDarkerColor(Library.MainColor));
+            ColorSequenceKeypoint.new(0.45, Library.MainColor);
+            ColorSequenceKeypoint.new(1, Library:GetDarkerColor(Library.MainColor));
+        });
+        Rotation = 135;
+        Parent = Inner;
+    });
+    Library:AddToRegistry(WindowBgGradient, {
+        Color = function()
+            return ColorSequence.new({
+                ColorSequenceKeypoint.new(0, Library:GetDarkerColor(Library.MainColor));
+                ColorSequenceKeypoint.new(0.45, Library.MainColor);
+                ColorSequenceKeypoint.new(1, Library:GetDarkerColor(Library.MainColor));
+            })
+        end
+    });
+
     -- [CHANGE 2] Accent top bar (2px) at very top of window
     local WindowAccentBar = Library:Create('Frame', {
         BackgroundColor3 = Library.AccentColor;
         BorderSizePixel = 0;
-        Size = UDim2.new(1, 0, 0, 1);
+        Size = UDim2.new(1, 0, 0, 2);
         ZIndex = 2;
         Parent = Inner;
     });
@@ -3254,14 +3285,12 @@ function Library:CreateWindow(...)
             Position = UDim2.new(0, 8 - 1, 0, 8 - 1);
             Size = UDim2.new(0.5, -12 + 2, 0, 507 * Library.MobileScale + 2);
             CanvasSize = UDim2.new(0, 0, 0, 0);
-            BottomImage = 'rbxasset://textures/ui/Scroll/scroll-middle.png';
-            TopImage = 'rbxasset://textures/ui/Scroll/scroll-middle.png';
-            ScrollBarThickness = 3;
-            ScrollBarImageColor3 = Library.AccentColor;
+            BottomImage = '';
+            TopImage = '';
+            ScrollBarThickness = 0;
             ZIndex = 2;
             Parent = TabFrame;
         });
-        Library:AddToRegistry(LeftSide, { ScrollBarImageColor3 = 'AccentColor' });
 
         local RightSide = Library:Create('ScrollingFrame', {
             BackgroundTransparency = 1;
@@ -3269,14 +3298,12 @@ function Library:CreateWindow(...)
             Position = UDim2.new(0.5, 4 + 1, 0, 8 - 1);
             Size = UDim2.new(0.5, -12 + 2, 0, 507 * Library.MobileScale + 2);
             CanvasSize = UDim2.new(0, 0, 0, 0);
-            BottomImage = 'rbxasset://textures/ui/Scroll/scroll-middle.png';
-            TopImage = 'rbxasset://textures/ui/Scroll/scroll-middle.png';
-            ScrollBarThickness = 3;
-            ScrollBarImageColor3 = Library.AccentColor;
+            BottomImage = '';
+            TopImage = '';
+            ScrollBarThickness = 0;
             ZIndex = 2;
             Parent = TabFrame;
         });
-        Library:AddToRegistry(RightSide, { ScrollBarImageColor3 = 'AccentColor' });
 
         Library:Create('UIListLayout', {
             Padding = UDim.new(0, 8);
@@ -3371,14 +3398,26 @@ function Library:CreateWindow(...)
                 BackgroundColor3 = 'AccentColor';
             });
 
+            -- Legend-style label: floats ON the top border line
             local GroupboxLabel = Library:CreateLabel({
-                Size = UDim2.new(1, 0, 0, 18 * Library.MobileScale);
-                Position = UDim2.new(0, 4, 0, 2);
-                TextSize = 14 * Library.MobileScale;
+                BackgroundColor3 = Library.BackgroundColor;
+                BackgroundTransparency = 0;
+                Size = UDim2.new(0, 0, 0, 14);
+                AutomaticSize = Enum.AutomaticSize.X;
+                Position = UDim2.new(0, 6, 0, -7);
+                TextSize = 13 * Library.MobileScale;
                 Text = Info.Name;
                 TextXAlignment = Enum.TextXAlignment.Left;
-                ZIndex = 5;
+                ZIndex = 7;
                 Parent = BoxInner;
+            });
+            Library:Create('UIPadding', {
+                PaddingLeft = UDim.new(0, 3);
+                PaddingRight = UDim.new(0, 3);
+                Parent = GroupboxLabel;
+            });
+            Library:AddToRegistry(GroupboxLabel, {
+                BackgroundColor3 = 'BackgroundColor';
             });
 
             local Container = Library:Create('Frame', {
@@ -3870,6 +3909,263 @@ end;
 
 Players.PlayerAdded:Connect(OnPlayerChange);
 Players.PlayerRemoving:Connect(OnPlayerChange);
+
+-- ====================================================
+-- LEADERBOARD SYSTEM
+-- ====================================================
+Library.Leaderboard = {
+    Visible = false;
+    Priorities = {};   -- [playerName] = { Level = 1, Label = "Admin", Color = Color3 }
+    PriorityOrder = {}; -- ordered list of level numbers for sorting
+}
+
+do
+    -- Priority levels (library user can call Library.Leaderboard:AddPriority to register levels)
+    -- Default levels built-in: 0 = normal
+    Library.Leaderboard.PriorityLevels = {
+        [0] = { Label = "", Color = Color3.fromRGB(200, 200, 200) }
+    }
+
+    -- Leaderboard window
+    local LBOuter = Library:Create('Frame', {
+        BackgroundColor3 = Color3.new(0, 0, 0);
+        BorderSizePixel = 0;
+        Position = UDim2.new(1, -185, 0, 50);
+        Size = UDim2.new(0, 175, 0, 0);
+        Visible = false;
+        ZIndex = 190;
+        Parent = ScreenGui;
+    });
+
+    local LBInner = Library:Create('Frame', {
+        BackgroundColor3 = Library.MainColor;
+        BorderColor3 = Library.AccentColor;
+        BorderMode = Enum.BorderMode.Inset;
+        Size = UDim2.new(1, -2, 1, -2);
+        Position = UDim2.new(0, 1, 0, 1);
+        ZIndex = 191;
+        Parent = LBOuter;
+    });
+
+    Library:AddToRegistry(LBInner, { BackgroundColor3 = 'MainColor'; BorderColor3 = 'AccentColor' });
+
+    -- Full-window gradient on LB window
+    local LBBgGradient = Library:Create('UIGradient', {
+        Color = ColorSequence.new({
+            ColorSequenceKeypoint.new(0, Library:GetDarkerColor(Library.MainColor));
+            ColorSequenceKeypoint.new(0.45, Library.MainColor);
+            ColorSequenceKeypoint.new(1, Library:GetDarkerColor(Library.MainColor));
+        });
+        Rotation = 135;
+        Parent = LBInner;
+    });
+    Library:AddToRegistry(LBBgGradient, {
+        Color = function()
+            return ColorSequence.new({
+                ColorSequenceKeypoint.new(0, Library:GetDarkerColor(Library.MainColor));
+                ColorSequenceKeypoint.new(0.45, Library.MainColor);
+                ColorSequenceKeypoint.new(1, Library:GetDarkerColor(Library.MainColor));
+            })
+        end
+    });
+
+    -- Accent top bar
+    local LBAccentBar = Library:Create('Frame', {
+        BackgroundColor3 = Library.AccentColor;
+        BorderSizePixel = 0;
+        Size = UDim2.new(1, 0, 0, 2);
+        ZIndex = 193;
+        Parent = LBInner;
+    });
+    Library:AddToRegistry(LBAccentBar, { BackgroundColor3 = 'AccentColor' });
+
+    -- Legend label
+    local LBHeader = Library:CreateLabel({
+        BackgroundColor3 = Library.MainColor;
+        BackgroundTransparency = 0;
+        Size = UDim2.new(0, 0, 0, 14);
+        AutomaticSize = Enum.AutomaticSize.X;
+        Position = UDim2.new(0, 6, 0, -5);
+        TextXAlignment = Enum.TextXAlignment.Left;
+        Text = 'Players';
+        ZIndex = 195;
+        Parent = LBInner;
+    });
+    Library:Create('UIPadding', { PaddingLeft = UDim.new(0,3); PaddingRight = UDim.new(0,3); Parent = LBHeader });
+    Library:AddToRegistry(LBHeader, { BackgroundColor3 = 'MainColor' });
+
+    -- Scrolling player list
+    local LBScroll = Library:Create('ScrollingFrame', {
+        BackgroundTransparency = 1;
+        BorderSizePixel = 0;
+        Position = UDim2.new(0, 4, 0, 14);
+        Size = UDim2.new(1, -8, 1, -18);
+        CanvasSize = UDim2.new(0, 0, 0, 0);
+        ScrollBarThickness = 0;
+        ZIndex = 192;
+        Parent = LBInner;
+    });
+
+    Library:Create('UIListLayout', {
+        FillDirection = Enum.FillDirection.Vertical;
+        SortOrder = Enum.SortOrder.LayoutOrder;
+        Padding = UDim.new(0, 2);
+        Parent = LBScroll;
+    });
+
+    Library:MakeDraggable(LBOuter, 40);
+
+    Library.Leaderboard.Frame = LBOuter;
+    Library.Leaderboard.Inner = LBInner;
+    Library.Leaderboard.Scroll = LBScroll;
+
+    local function GetPriorityLevel(playerName)
+        local entry = Library.Leaderboard.Priorities[playerName]
+        if entry then return entry.Level end
+        return 0
+    end
+
+    local function GetPriorityColor(playerName)
+        local level = GetPriorityLevel(playerName)
+        local def = Library.Leaderboard.PriorityLevels[level]
+        if def then return def.Color end
+        return Color3.fromRGB(200, 200, 200)
+    end
+
+    local function GetPriorityLabel(playerName)
+        local level = GetPriorityLevel(playerName)
+        local def = Library.Leaderboard.PriorityLevels[level]
+        if def and def.Label ~= "" then return "[" .. def.Label .. "] " end
+        return ""
+    end
+
+    local function RebuildLeaderboard()
+        -- Clear existing rows
+        for _, child in ipairs(LBScroll:GetChildren()) do
+            if not child:IsA('UIListLayout') then child:Destroy() end
+        end
+
+        local playerList = Players:GetPlayers()
+
+        -- Sort: priority level descending, then name ascending
+        table.sort(playerList, function(a, b)
+            local la = GetPriorityLevel(a.Name)
+            local lb = GetPriorityLevel(b.Name)
+            if la ~= lb then return la > lb end
+            return a.Name:lower() < b.Name:lower()
+        end)
+
+        for _, player in ipairs(playerList) do
+            local priorityLabel = GetPriorityLabel(player.Name)
+            local priorityColor = GetPriorityColor(player.Name)
+
+            local Row = Library:Create('Frame', {
+                BackgroundTransparency = 1;
+                Size = UDim2.new(1, 0, 0, 16);
+                ZIndex = 193;
+                Parent = LBScroll;
+            });
+
+            local NameLabel = Library:CreateLabel({
+                Size = UDim2.new(1, 0, 1, 0);
+                TextSize = 13;
+                Text = priorityLabel .. player.Name;
+                TextColor3 = priorityColor;
+                TextXAlignment = Enum.TextXAlignment.Left;
+                ZIndex = 194;
+                Parent = Row;
+            });
+            -- Override registry entry so color isn't clobbered by theme updates
+            Library.RegistryMap[NameLabel].Properties.TextColor3 = nil
+            NameLabel.TextColor3 = priorityColor
+        end
+
+        -- Resize LB window to fit content
+        local rowCount = #playerList
+        local contentH = math.max(rowCount * 18 + 4, 30)
+        contentH = math.min(contentH, 300)
+        LBOuter.Size = UDim2.new(0, 175, 0, contentH + 18)
+        LBScroll.CanvasSize = UDim2.fromOffset(0, #playerList * 18)
+    end
+
+    function Library.Leaderboard:Rebuild()
+        RebuildLeaderboard()
+    end
+
+    function Library.Leaderboard:SetVisible(bool)
+        Library.Leaderboard.Visible = bool
+        LBOuter.Visible = bool
+        if bool then RebuildLeaderboard() end
+    end
+
+    -- Priority API for library users:
+    -- Library.Leaderboard:AddPriority(level, label, color)
+    -- Library.Leaderboard:SetPlayerPriority(playerName, level)
+    -- Library.Leaderboard:ClearPlayerPriority(playerName)
+
+    function Library.Leaderboard:AddPriority(Level, Label, Color)
+        Library.Leaderboard.PriorityLevels[Level] = { Label = Label; Color = Color or Color3.fromRGB(255,255,255) }
+    end
+
+    function Library.Leaderboard:SetPlayerPriority(PlayerName, Level)
+        Library.Leaderboard.Priorities[PlayerName] = { Level = Level }
+        if Library.Leaderboard.Visible then RebuildLeaderboard() end
+    end
+
+    function Library.Leaderboard:ClearPlayerPriority(PlayerName)
+        Library.Leaderboard.Priorities[PlayerName] = nil
+        if Library.Leaderboard.Visible then RebuildLeaderboard() end
+    end
+
+    -- Auto-rebuild when players join/leave
+    Players.PlayerAdded:Connect(function()
+        if Library.Leaderboard.Visible then RebuildLeaderboard() end
+    end)
+    Players.PlayerRemoving:Connect(function()
+        if Library.Leaderboard.Visible then RebuildLeaderboard() end
+    end)
+end
+
+-- ====================================================
+-- UI SETTINGS HELPER
+-- ====================================================
+-- Usage: Library:SetupUISettings(Tab)
+-- Adds Watermark, Keybinds, and Leaderboard visibility toggles
+-- to the given tab (left groupbox "UI Settings")
+function Library:SetupUISettings(Tab)
+    local SettingsBox = Tab:AddLeftGroupbox('UI Settings')
+
+    -- Watermark toggle
+    SettingsBox:AddToggle('ShowWatermark', {
+        Text = 'Show Watermark';
+        Default = Library.Watermark.Visible;
+        Callback = function(Value)
+            Library:SetWatermarkVisibility(Value)
+        end;
+    })
+
+    -- Keybinds widget toggle
+    SettingsBox:AddToggle('ShowKeybinds', {
+        Text = 'Show Keybinds';
+        Default = Library.KeybindFrame and Library.KeybindFrame.Visible or false;
+        Callback = function(Value)
+            if Library.KeybindFrame then
+                Library.KeybindFrame.Visible = Value
+            end
+        end;
+    })
+
+    -- Leaderboard toggle
+    SettingsBox:AddToggle('ShowLeaderboard', {
+        Text = 'Show Leaderboard';
+        Default = false;
+        Callback = function(Value)
+            Library.Leaderboard:SetVisible(Value)
+        end;
+    })
+
+    return SettingsBox
+end
 
 getgenv().Library = Library
 return Library
