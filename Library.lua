@@ -3086,26 +3086,6 @@ function Library:CreateWindow(...)
         BorderColor3 = 'AccentColor';
     });
 
-    -- Full-window background gradient (subtle, covers entire window area)
-    local WindowBgGradient = Library:Create('UIGradient', {
-        Color = ColorSequence.new({
-            ColorSequenceKeypoint.new(0, Library:GetDarkerColor(Library.MainColor));
-            ColorSequenceKeypoint.new(0.45, Library.MainColor);
-            ColorSequenceKeypoint.new(1, Library:GetDarkerColor(Library.MainColor));
-        });
-        Rotation = 135;
-        Parent = Inner;
-    });
-    Library:AddToRegistry(WindowBgGradient, {
-        Color = function()
-            return ColorSequence.new({
-                ColorSequenceKeypoint.new(0, Library:GetDarkerColor(Library.MainColor));
-                ColorSequenceKeypoint.new(0.45, Library.MainColor);
-                ColorSequenceKeypoint.new(1, Library:GetDarkerColor(Library.MainColor));
-            })
-        end
-    });
-
     -- [CHANGE 2] Accent top bar (2px) at very top of window
     local WindowAccentBar = Library:Create('Frame', {
         BackgroundColor3 = Library.AccentColor;
@@ -3398,22 +3378,23 @@ function Library:CreateWindow(...)
                 BackgroundColor3 = 'AccentColor';
             });
 
-            -- Legend-style label: floats ON the top border line
+            -- Legend label: centered on the top border, like HTML fieldset/legend
             local GroupboxLabel = Library:CreateLabel({
+                AnchorPoint = Vector2.new(0.5, 0.5);
                 BackgroundColor3 = Library.BackgroundColor;
                 BackgroundTransparency = 0;
                 Size = UDim2.new(0, 0, 0, 14);
                 AutomaticSize = Enum.AutomaticSize.X;
-                Position = UDim2.new(0, 6, 0, -7);
+                Position = UDim2.new(0.5, 0, 0, 0);
                 TextSize = 13 * Library.MobileScale;
                 Text = Info.Name;
-                TextXAlignment = Enum.TextXAlignment.Left;
+                TextXAlignment = Enum.TextXAlignment.Center;
                 ZIndex = 7;
                 Parent = BoxInner;
             });
             Library:Create('UIPadding', {
-                PaddingLeft = UDim.new(0, 3);
-                PaddingRight = UDim.new(0, 3);
+                PaddingLeft = UDim.new(0, 4);
+                PaddingRight = UDim.new(0, 4);
                 Parent = GroupboxLabel;
             });
             Library:AddToRegistry(GroupboxLabel, {
@@ -3422,8 +3403,8 @@ function Library:CreateWindow(...)
 
             local Container = Library:Create('Frame', {
                 BackgroundTransparency = 1;
-                Position = UDim2.new(0, 4, 0, 20 * Library.MobileScale);
-                Size = UDim2.new(1, -4, 1, -20 * Library.MobileScale);
+                Position = UDim2.new(0, 4, 0, 14);
+                Size = UDim2.new(1, -8, 1, -16);
                 ZIndex = 1;
                 Parent = BoxInner;
             });
@@ -3443,7 +3424,7 @@ function Library:CreateWindow(...)
                     end;
                 end;
 
-                BoxOuter.Size = UDim2.new(1, 0, 0, 20 * Library.MobileScale + Size + 2 + 2);
+                BoxOuter.Size = UDim2.new(1, 0, 0, 14 + Size + 10);
             end;
 
             Groupbox.Container = Container;
@@ -3920,10 +3901,14 @@ Library.Leaderboard = {
 }
 
 do
-    -- Priority levels (library user can call Library.Leaderboard:AddPriority to register levels)
-    -- Default levels built-in: 0 = normal
+    -- Priority levels: 1 = highest (shown first), 5/0 = normal (no label)
+    -- Pre-built tiers the library user can assign to players
     Library.Leaderboard.PriorityLevels = {
-        [0] = { Label = "", Color = Color3.fromRGB(200, 200, 200) }
+        [0] = { Label = "",        Color = Color3.fromRGB(180, 180, 180) };  -- Normal
+        [1] = { Label = "Weirdo",  Color = Color3.fromRGB(180, 80,  255) };  -- Max priority
+        [2] = { Label = "Goat",    Color = Color3.fromRGB(255, 215, 0)   };  -- Gold
+        [3] = { Label = "Cheater", Color = Color3.fromRGB(255, 80,  80)  };  -- Red
+        [4] = { Label = "Ignored", Color = Color3.fromRGB(120, 120, 120) };  -- Gray
     }
 
     -- Leaderboard window
@@ -3948,26 +3933,6 @@ do
     });
 
     Library:AddToRegistry(LBInner, { BackgroundColor3 = 'MainColor'; BorderColor3 = 'AccentColor' });
-
-    -- Full-window gradient on LB window
-    local LBBgGradient = Library:Create('UIGradient', {
-        Color = ColorSequence.new({
-            ColorSequenceKeypoint.new(0, Library:GetDarkerColor(Library.MainColor));
-            ColorSequenceKeypoint.new(0.45, Library.MainColor);
-            ColorSequenceKeypoint.new(1, Library:GetDarkerColor(Library.MainColor));
-        });
-        Rotation = 135;
-        Parent = LBInner;
-    });
-    Library:AddToRegistry(LBBgGradient, {
-        Color = function()
-            return ColorSequence.new({
-                ColorSequenceKeypoint.new(0, Library:GetDarkerColor(Library.MainColor));
-                ColorSequenceKeypoint.new(0.45, Library.MainColor);
-                ColorSequenceKeypoint.new(1, Library:GetDarkerColor(Library.MainColor));
-            })
-        end
-    });
 
     -- Accent top bar
     local LBAccentBar = Library:Create('Frame', {
@@ -4047,11 +4012,15 @@ do
 
         local playerList = Players:GetPlayers()
 
-        -- Sort: priority level descending, then name ascending
+        -- Sort: level 1 first (highest priority), level 0 last, then alpha
         table.sort(playerList, function(a, b)
             local la = GetPriorityLevel(a.Name)
             local lb = GetPriorityLevel(b.Name)
-            if la ~= lb then return la > lb end
+            -- Non-zero levels sort ascending (1 before 2 before 3...)
+            -- Zero (normal) always goes last
+            if la == 0 and lb ~= 0 then return false end
+            if lb == 0 and la ~= 0 then return true end
+            if la ~= lb then return la < lb end
             return a.Name:lower() < b.Name:lower()
         end)
 
@@ -4166,6 +4135,20 @@ function Library:SetupUISettings(Tab)
 
     return SettingsBox
 end
+
+-- ====================================================
+-- LEADERBOARD PRIORITY QUICK-REFERENCE
+-- ====================================================
+-- Assign a priority tier to a player:
+--   Library.Leaderboard:SetPlayerPriority("PlayerName", 1) -- Weirdo (max)
+--   Library.Leaderboard:SetPlayerPriority("PlayerName", 2) -- Goat
+--   Library.Leaderboard:SetPlayerPriority("PlayerName", 3) -- Cheater
+--   Library.Leaderboard:SetPlayerPriority("PlayerName", 4) -- Ignored
+--   Library.Leaderboard:ClearPlayerPriority("PlayerName")  -- back to Normal
+--
+-- Add custom tiers (optional):
+--   Library.Leaderboard:AddPriority(5, "Newbie", Color3.fromRGB(100,200,100))
+-- ====================================================
 
 getgenv().Library = Library
 return Library
